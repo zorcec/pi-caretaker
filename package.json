@@ -1,6 +1,6 @@
 {
   "name": "pi-caretaker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Native Pi extension: webhooks in, agent triage, Telegram only when it matters",
   "type": "module",
   "license": "Apache-2.0",

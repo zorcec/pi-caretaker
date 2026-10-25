@@ -27,6 +27,18 @@ function fixture(): RepoFixture {
 }
 
 describe("release guard (scripts/release.mjs)", () => {
+  // Invariant: this repository is always releasable. The default version
+  // comes from package.json, so any commit that removes or empties the
+  // matching CHANGELOG section fails here — not at release time.
+  it("the real checkout's own version has non-empty notes", () => {
+    const result = runRepoScript(GUARD, { args: ["--print-notes"] });
+
+    expect(result.status).toBe(0);
+    expect(result.crashed).toBe(false);
+    expect(result.stdout).toMatch(/^## \d+\.\d+\.\d+/m);
+    expect(result.stdout.trim().length).toBeGreaterThan(0);
+  });
+
   it("refuses a version with no CHANGELOG section and names it", () => {
     const result = runRepoScript(GUARD, {
       args: ["--print-notes", "--version", MISSING_VERSION],
