@@ -24,5 +24,12 @@
       "addedAt": "2026-10-25T16:25:28.466Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.978Z"
+  "updated": "2026-10-25T17:45:09.396Z",
+  "commits": [
+    {
+      "sha": "26210e9ed0312f37e2301264405bfe1dae1ce2c5",
+      "message": "feat(escape-hatch): deterministic bypass mechanism with empty owner list",
+      "timestamp": "2026-10-25T17:45:09.395Z"
+    }
+  ]
 }

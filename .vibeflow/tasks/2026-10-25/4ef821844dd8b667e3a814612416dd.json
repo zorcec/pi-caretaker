@@ -24,5 +24,12 @@
       "addedAt": "2026-10-25T16:25:24.670Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.977Z"
+  "updated": "2026-10-25T17:51:16.444Z",
+  "commits": [
+    {
+      "sha": "37ef641bc79c578337a0d76dba5343fb6deb7ff4",
+      "message": "feat(health): expose entry-owned getHealth from packaged entry",
+      "timestamp": "2026-10-25T17:51:16.442Z"
+    }
+  ]
 }
