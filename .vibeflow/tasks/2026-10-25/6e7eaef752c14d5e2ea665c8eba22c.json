@@ -1,7 +1,7 @@
 {
   "title": "Background triage turn with serialized session",
   "description": "Submit admitted events as background agent turns into one persistent Pi session, serialized against Telegram input so the two never contend for the turn. Use buildTriageRequest so webhook text stays in the data channel and the instruction channel stays the fixed repo-owned string (ADR-0002), with src/prompts/triage.md as the guidance. Default to silence; only a deliberate notify posts (ADR-0003).",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -21,12 +21,21 @@
   "sortKey": "0000000019000000",
   "id": "6e7eaef752c14d5e2ea665c8eba22c",
   "created": "2026-10-25T16:17:46.218Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "dbfc4207d00a2fbc",
+      "author": "agent",
+      "text": "**What changed — implemented as part of e443e5b4 (same session, same commits).** The delivery consumer in src/index.ts IS the background-triage wiring: each admitted event becomes one turn via `pi.sendUserMessage(triageText, { deliverAs: \"followUp\" })`, where the text carries the fixed repo-owned instructions plus the envelope as labeled untrusted data (ADR-0002 split preserved from `buildTriageRequest`). Serialization is two-layer: the single-flight pump submits at most one turn at a time, and Pi itself queues follow-up turns behind a running one — no turn contention with Telegram input by construction.\n\n**Open decisions resolved here vs still open.** Resolved: Pi package is now a real dependency (`@earendil-works/pi-coding-agent@^1.4.0`); triage guidance needs no runtime md loading (the fixed instruction string is compiled in, the md stays human documentation); failure policy is stop-and-surface (durable retry explicitly out, needs its own ADR). Still open and NOT claimed here: the Pitgram shared-session validation (ticket 17c69a53) — the turn submission works against any Pi runtime, but silent-turn behavior with Pitgram attached is unverified until that spike runs.\n\n**Verification.** tests/index.test.ts: admitted POST produces exactly one follow-up turn containing TRIAGE_INSTRUCTIONS verbatim before the event data (hostile-text test), and an ordinary event produces a turn with zero Telegram calls (silence test). Full gate green in the same session.",
+      "createdAt": "2026-10-25T18:24:21.934Z",
+      "source": "cli"
+    }
+  ],
   "files": [
     {
       "name": "6e7eaef7-implementation-plan.md",
       "addedAt": "2026-10-25T16:25:24.007Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.978Z"
+  "updated": "2026-10-25T18:24:21.933Z",
+  "verified": true
 }
