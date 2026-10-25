@@ -77,23 +77,24 @@ async function listenOn(
   };
 }
 
-function authHeaders(token: string | undefined): Record<string, string> {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-  };
-  if (token !== undefined) headers.authorization = token;
-  return headers;
-}
-
 async function postEvents(
   baseUrl: string,
   body: string,
-  // undefined omits the header entirely; every other value is sent verbatim.
+  // undefined omits the auth header entirely; every other value is sent verbatim.
   token: string | undefined,
+  // null omits the content-type header; undefined (or omission) defaults to JSON.
+  contentType: string | null | undefined = "application/json",
 ): Promise<{ status: number; json: unknown; allow: string | null }> {
+  const headers: Record<string, string> = {};
+  if (contentType !== null && contentType !== undefined) {
+    headers["content-type"] = contentType;
+  } else if (contentType === undefined) {
+    headers["content-type"] = "application/json";
+  }
+  if (token !== undefined) headers.authorization = token;
   const response = await fetch(`${baseUrl}/events`, {
     method: "POST",
-    headers: authHeaders(token),
+    headers,
     body,
   });
   return {
@@ -112,6 +113,33 @@ describe("webhook listener (POST /events, GET /health)", () => {
     ).toThrow(/non-empty bearer token/);
   });
 
+  it("rejects a missing or non-JSON content type with 415 before reading the body", async () => {
+    const { baseUrl } = await listen();
+    const body = JSON.stringify({ message: "x" });
+
+    for (const contentType of [null, "text/plain", "text/html"]) {
+      const { status, json } = await postEvents(
+        baseUrl,
+        body,
+        `Bearer ${TOKEN}`,
+        contentType,
+      );
+      expect(status).toBe(415);
+      expect(json).toEqual({
+        error: "content-type must be application/json",
+      });
+    }
+    // A charset suffix is still JSON.
+    const { status } = await postEvents(
+      baseUrl,
+      body,
+      `Bearer ${TOKEN}`,
+      "application/json; charset=utf-8",
+    );
+    expect(status).toBe(202);
+    expect(queueSize()).toBe(1);
+  });
+
   it("rejects a chunked body that exceeds the cap mid-stream with 413", async () => {
     const running = await listen(16);
     const oversized = `{"message":"${"z".repeat(MAX_EVENT_BODY_BYTES)}"}`;
@@ -123,6 +151,7 @@ describe("webhook listener (POST /events, GET /health)", () => {
           method: "POST",
           headers: {
             authorization: `Bearer ${TOKEN}`,
+            "content-type": "application/json",
             "transfer-encoding": "chunked",
           },
         },

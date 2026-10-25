@@ -45,7 +45,13 @@ import { getHealth as buildHealth, type HealthReport } from "./health.js";
 import type { TelegramAdapter } from "./telegram/index.js";
 
 /** Extension version, reported by getHealth() and caretaker-status. */
-export const EXTENSION_VERSION = "0.1.0";
+/** Extension version: the built package's version, injected at build time.
+ *  Falls back to "dev" when running from source without a bundle. */
+declare const __PI_CARETAKER_VERSION__: string | undefined;
+export const EXTENSION_VERSION =
+  typeof __PI_CARETAKER_VERSION__ !== "undefined"
+    ? __PI_CARETAKER_VERSION__
+    : "dev";
 
 /** Entry-owned health accessor: the packaged entry reports its own version. */
 export function getHealth(): HealthReport {

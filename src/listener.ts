@@ -137,6 +137,20 @@ async function handleRequest(
       return;
     }
     const authorization = request.headers.authorization;
+    // Content-Type enforcement (owner decision 2026-10-25): this endpoint
+    // only speaks JSON. Checked after auth (no parsing happens here) and
+    // before buffering a single byte, so a wrong-type body costs nothing.
+    const contentType = request.headers["content-type"];
+    if (
+      typeof contentType !== "string" ||
+      !contentType.split(";")[0]?.trim().toLowerCase().startsWith("application/json")
+    ) {
+      sendJson(response, 415, {
+        error: "content-type must be application/json",
+      });
+      request.resume();
+      return;
+    }
     const rawBody = await readCappedBody(request);
     if (rawBody === undefined) {
       sendJson(response, 413, {

@@ -1,15 +1,30 @@
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { defineConfig } from "tsup";
 
-// Commit SHA injected into GET /health at build time (ADR-0001: health must
-// report the deployed commit, never a hardcoded string). Falls back to "dev"
-// for local builds with no git checkout.
+// Package version injected into the entry at build time (owner decision
+// 2026-10-25: the reported version is the built package's version, never a
+// hardcoded string). Falls back to "dev" outside a built bundle.
 function commitSha(): string {
   try {
     return execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
   } catch {
     return "dev";
   }
+}
+
+function packageVersion(): string {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+    );
+    if (typeof manifest.version === "string" && manifest.version.length > 0) {
+      return manifest.version;
+    }
+  } catch {
+    // fall through to dev
+  }
+  return "dev";
 }
 
 export default defineConfig({
@@ -20,5 +35,6 @@ export default defineConfig({
   sourcemap: true,
   define: {
     __PI_CARETAKER_COMMIT__: JSON.stringify(commitSha()),
+    __PI_CARETAKER_VERSION__: JSON.stringify(packageVersion()),
   },
 });

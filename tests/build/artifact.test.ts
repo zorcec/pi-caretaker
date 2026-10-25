@@ -88,9 +88,15 @@ describe("built artifact", () => {
 
   it("exposes the Pi extension factory as the packaged default export", async () => {
     const entry = (await import(built("index.js"))) as BuiltIndex;
+    const pkg = JSON.parse(
+      readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
 
     expect(typeof entry.default).toBe("function");
-    expect(entry.EXTENSION_VERSION).toBe("0.1.0");
+    // The bundled version is injected at build time — never "dev" here,
+    // which is what a broken injection would produce.
+    expect(entry.EXTENSION_VERSION).toBe(pkg.version);
+    expect(entry.EXTENSION_VERSION).not.toBe("dev");
     const controls = entry.default({
       on: () => () => undefined,
       sendUserMessage: () => undefined,
@@ -112,10 +118,13 @@ describe("built artifact", () => {
 
   it("GET /health is reachable from the packaged entry, carrying the injected commit", async () => {
     const entry = (await import(built("index.js"))) as BuiltIndex;
+    const pkg = JSON.parse(
+      readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
 
     expect(entry.getHealth()).toEqual({
       status: "ok",
-      version: "0.1.0",
+      version: pkg.version,
       commit: shortHead(),
     });
   });
