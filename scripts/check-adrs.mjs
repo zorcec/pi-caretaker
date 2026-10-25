@@ -34,26 +34,37 @@
  *       updating/superseding the decision.
  *
  * Exit 1 with a list of problems. Exit 0 when clean.
+ *
+ * Import-safe by design (mirrors scripts/check-git-identity.mjs): the rules
+ * live in exported runCheck(), which returns the report as data and never
+ * prints or exits. Only main() owns output and the exit code, so tests can
+ * import this module for coverage without killing their own worker.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, "..");
-const decisionsDir = resolve(repoRoot, "docs/decisions");
-const scanRoots = ["src", "scripts", "tests"].map((p) =>
-  resolve(repoRoot, p),
-);
-
 const ADR_REF = /\bADR-(\d{4})\b/g;
 const SRC_EXT = /\.(ts|mjs|js)$/;
 
-if (!existsSync(decisionsDir)) {
-  console.log("check-adrs: no docs/decisions directory — nothing to check.");
-  process.exit(0);
-}
+const here = dirname(fileURLToPath(import.meta.url));
+const defaultRepoRoot = resolve(here, "..");
+
+/**
+ * Run every ADR rule against `root` and return the report as data.
+ * Prints nothing and never exits — see the module header.
+ */
+export function runCheck(root = defaultRepoRoot) {
+  const repoRoot = resolve(root);
+  const decisionsDir = resolve(repoRoot, "docs/decisions");
+  const scanRoots = ["src", "scripts", "tests"].map((p) =>
+    resolve(repoRoot, p),
+  );
+
+  if (!existsSync(decisionsDir)) {
+    return { ok: true, adrCount: 0, problems: [] };
+  }
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -172,15 +183,31 @@ for (const f of adrFiles) {
   }
 }
 
-if (problems.length > 0) {
-  console.error(
-    `✗ ADR check failed:\n${problems.map((p) => `  ${p}`).join("\n")}`,
-  );
-  console.error(
-    "\nFix the pointers/ADRs, or update the decision with a new ADR that supersedes it.",
-  );
-  process.exit(1);
+  return { ok: problems.length === 0, adrCount: adrFiles.length, problems };
 }
-console.log(
-  `✓ ADR check: ${adrFiles.length} decisions, all referenced, pins, index and drift in sync.`,
-);
+
+/** CLI entry: print the report and return the exit code. */
+export function main() {
+  const result = runCheck();
+  if (result.adrCount === 0) {
+    console.log("check-adrs: no docs/decisions directory — nothing to check.");
+    return 0;
+  }
+  if (!result.ok) {
+    console.error(
+      `✗ ADR check failed:\n${result.problems.map((p) => `  ${p}`).join("\n")}`,
+    );
+    console.error(
+      "\nFix the pointers/ADRs, or update the decision with a new ADR that supersedes it.",
+    );
+    return 1;
+  }
+  console.log(
+    `✓ ADR check: ${result.adrCount} decisions, all referenced, pins, index and drift in sync.`,
+  );
+  return 0;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  process.exitCode = main();
+}

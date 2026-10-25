@@ -54,10 +54,10 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
-      // scripts/ is deliberately listed even though child-process execution is
-      // not attributed to these numbers by the v8 provider — the guard e2e
-      // asserts exit codes and stderr instead. Thresholds are therefore keyed
-      // to `src/**` only; see the coverage discussion in the test-setup notes.
+      // scripts/ counts because the guards expose importable functions
+      // (runCheck, isTestIdentity, extractReleaseNotes, …) alongside their
+      // child-process CLI surface. The child-process runs prove exit codes;
+      // these numbers prove the logic itself is executed.
       include: ["src/**/*.ts", "scripts/**/*.mjs"],
       thresholds: {
         "src/**/*.ts": {
@@ -65,6 +65,14 @@ export default defineConfig({
           functions: 100,
           branches: 85,
           lines: 95,
+        },
+        // Ratchet: measured 47.63 / 76.92 / 41.66 / 47.63 with all three
+        // guards importable. Pinned just below so any regression fails.
+        "scripts/**/*.mjs": {
+          statements: 47,
+          functions: 41,
+          branches: 76,
+          lines: 47,
         },
       },
     },
