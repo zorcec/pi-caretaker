@@ -80,7 +80,13 @@ pnpm check       # typecheck + lint + test — green before EVERY commit
 - **pre-commit:** identity (`check-git-identity.mjs`) → ADR gate
   (`check-adrs.mjs`: dangling refs, pins exist, index in sync, code refs
   every ADR, day-granularity drift). Fast, no network.
-- **pre-push:** typecheck → lint → test, in that order.
+- **pre-push:** typecheck → lint → test, in that order. There is no
+  remote CI: these local gates are the only gates.
+- **No remote CI, ever.** No `.github/workflows`, no GitHub Actions, no
+other runner. Local hooks do not run on a stranger's fork — that is why
+external PRs need a human review, never a merge on green-looking checks
+alone (see AGENTS.md). If you are about to create a workflow file, stop:
+that decision belongs to the owner, not to a ticket.
 - **Trap: `pnpm check` does not build.** If you touched `src/index.ts`,
   `src/health.ts`, or `tsup.config.ts` (anything the build injects or
   bundles), run `pnpm build` explicitly — a green `check` with a broken

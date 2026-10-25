@@ -53,10 +53,10 @@ pnpm check       # typecheck + lint + test (green before every commit)
 - **V1 non-goals are binding:** no persistence, no dedupe/correlation engine,
   no dashboards, no database, no automatic infra changes — not without an ADR.
 
-## Open question (not a gap in the rules)
+## External PRs (decided 2026-10-25: no remote CI, ever)
 
-This will be a **public repo: how do strangers' PRs get gated?** There is no
-CI yet, so today a push is only as safe as local hooks — which do not run on
-someone else's fork. Until this is answered, do not merge external PRs on
-green-looking checks alone; the answer belongs here once the owner decides
-(remote CI, required reviews, or both).
+There is deliberately no CI in this repo — no `.github/workflows`, no
+GitHub Actions, no other remote runner, and no one adds one without the
+owner's explicit word. Local hooks are the only automated gate, and they do
+not run on a stranger's fork. So: never merge an external PR without a
+human review, no matter how green anything looks.
