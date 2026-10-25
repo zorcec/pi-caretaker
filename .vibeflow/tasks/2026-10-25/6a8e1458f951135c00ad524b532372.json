@@ -1,7 +1,7 @@
 {
   "title": "Bounded in-memory queue with sequential delivery",
   "description": "Implement the EventQueue interface from src/queue.ts: bounded FIFO, monotonically increasing seq, ISO receivedAt, rejection with reason full at capacity, and strictly sequential single-consumer delivery into Pi. Deliberately not crash durable: events at restart are lost by design, which is ADR-0001, not a bug. Admission and overflow semantics are what the overload status codes in the listener depend on.",
-  "status": "todo",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Critical",
@@ -29,6 +29,12 @@
       "text": "Moved out of review: not delivered. src/queue.ts is an interface with types and no implementation; ADR-0001 pins the 202-means-queued semantics, but there is no queue to review yet.",
       "author": "agent",
       "createdAt": "2026-10-25T17:46:32.318Z"
+    },
+    {
+      "id": "hl6khd8dpasg146k5x9zvksm",
+      "text": "**Re-review after owner check (2026-10-25).** The \"not delivered\" note did not match the pushed tree, so here is the evidence, all on origin/main (verified by fresh fetch just now):\n\n- `src/queue.ts` exports `createEventQueue` (line 60) and `startDelivery` (line 108): bounded FIFO, sequences from 0, refusals consume no sequence, single-flight pump, throw-stops-and-surfaces. Not an interface file.\n- Tests on origin: `tests/queue.test.ts` (17 tests), 3 real pipeline cases in `tests/e2e/pipeline.e2e.test.ts`.\n- Commits: `b4e2494 feat(queue): bounded FIFO with sequential delivery pump [vibeflow:6a8e1458...]`, plus ADR-0001 pins + index row in the same line.\n\nSuite is green at 150+ passing. If what you reviewed was a stale checkout, `git pull` and look again — and if something specific is missing, name it and I will build it.",
+      "author": "agent",
+      "createdAt": "2026-10-25T20:46:38.032Z"
     }
   ],
   "files": [
@@ -37,7 +43,7 @@
       "addedAt": "2026-10-25T16:25:25.309Z"
     }
   ],
-  "updated": "2026-10-25T17:53:38.553Z",
+  "updated": "2026-10-25T20:47:49.341Z",
   "commits": [
     {
       "sha": "b4e24941e1c7c0207866660020aadcb266867986",

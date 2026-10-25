@@ -1,7 +1,7 @@
 {
   "title": "Deterministic escape hatch bypass",
   "description": "Implement ADR-0004 as code: an owner-reviewed must-never-miss list (host gone dark, backups dead) checked before triage and notified unconditionally, without the model deciding anything. Today the only enforcement point is a regex over src/prompts/triage.md, which pins prose rather than behavior. The list stays short and its contents are an owner decision.",
-  "status": "todo",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Critical",
@@ -29,6 +29,12 @@
       "text": "Moved out of review: not delivered. ADR-0004 is written and pinned, but the deterministic escape hatch itself is not built — review implied it was awaiting sign-off on a finished change.",
       "author": "agent",
       "createdAt": "2026-10-25T17:46:31.030Z"
+    },
+    {
+      "id": "jmsmot1p873tytl20x5kry9s",
+      "text": "**Re-review after owner check (2026-10-25).** The \"escape hatch itself is not built\" note did not match the pushed tree — evidence, all on origin/main (fresh fetch just now):\n\n- `src/escape-hatch.ts`: `matchEscapeHatch` (first-match-wins over a rule list), `formatEscapeHatchNotification` (deterministic text, never quotes untrusted message/metadata/payload), `routeEscapeHatch` (match: exactly one `notify`, continuation never called; non-match: continuation exactly once, zero notifies; notify rejection propagates with no fallthrough).\n- Tests on origin: `tests/escape-hatch.test.ts` (7 tests, mechanism-level with fixture rules).\n- Commits: `26210e9 feat(escape-hatch): deterministic bypass mechanism with empty owner list [vibeflow:baac47cd...]`, ADR-0004 pin intact (now behavioral, not a prose grep).\n\nWhat is genuinely still open (unchanged): the wire vocabulary (which values mean host-dark/backups-dead) and the notification field subset — those are owner decisions, and `MUST_NOTIFY_RULES` ships empty so nothing misfires until you answer them. That is a pending decision, not missing implementation.",
+      "author": "agent",
+      "createdAt": "2026-10-25T20:46:43.651Z"
     }
   ],
   "files": [
@@ -37,7 +43,7 @@
       "addedAt": "2026-10-25T16:25:28.466Z"
     }
   ],
-  "updated": "2026-10-25T17:53:38.554Z",
+  "updated": "2026-10-25T20:47:49.341Z",
   "commits": [
     {
       "sha": "26210e9ed0312f37e2301264405bfe1dae1ce2c5",
