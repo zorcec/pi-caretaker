@@ -5,10 +5,12 @@
 Node 22 ESM + TypeScript (strict), `pnpm`, `tsup` build, `vitest` (the single
 test runner), flat `eslint.config.mjs` (unused-symbols rule), zod for the
 event envelope. Decisions live in `docs/decisions/`; guards in `scripts/`.
-This is a Pi-native project: skills live in `.pi/skills/` (registered via
-`.pi/settings.json`), NOT in `.opencode/` — there is no `.opencode/`
-directory here. If you know `.opencode/skills/` from the vibeflow repos,
-read `.pi/skills/` instead; same idea, Pi's own layout.
+This is a Pi-native project: skills live in `.agents/skills/`, the portable
+Agent Skills location that Pi discovers automatically (no registration needed).
+There is no `.opencode/` directory here. If you know `.opencode/skills/` from the
+vibeflow repos, read `.agents/skills/` instead — same idea, discoverable layout.
+Deliberately **not** `.pi/skills/`: Pi supports it, but a dot-directory is
+invisible in most file browsers and contributors never find the skills.
 
 ## The five commands
 

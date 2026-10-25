@@ -25,5 +25,5 @@ Skill misleads you
 ## Commit
 
 ```bash
-git add .pi/skills/<name>/ && git commit -m "improve(skill): <name> — <what>" -- .pi/skills/<name>/
+git add .agents/skills/<name>/ && git commit -m "improve(skill): <name> — <what>" -- .agents/skills/<name>/
 ```
