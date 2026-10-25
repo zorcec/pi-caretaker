@@ -1,14 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
 import piCaretaker, {
   EXTENSION_VERSION,
   getHealth,
 } from "../src/index.js";
 import { TRIAGE_INSTRUCTIONS } from "../src/events.js";
 import type { TelegramAdapter } from "../src/telegram/index.js";
+import {
+  createFakePi,
+  fakeContext,
+  postEvent,
+  restoreEnv,
+  snapshotEnv,
+  startedPort,
+  testEnv,
+} from "./setup/fake-pi.js";
 
 /**
  * Pins the Pi entry wiring (ticket e443e5b4) without a Pi process.
@@ -18,113 +23,11 @@ import type { TelegramAdapter } from "../src/telegram/index.js";
  * loopback listener directly. Nothing in these tests needs network, models,
  * or Telegram credentials — port 0 keeps every socket local and ephemeral.
  */
-interface RecordedTurn {
-  content: string;
-  options: unknown;
-}
-
-interface FakePi {
-  api: ExtensionAPI;
-  handlers: Map<string, (event: unknown, ctx: ExtensionContext) => unknown>;
-  sent: RecordedTurn[];
-  tools: Map<string, { execute: (...args: any[]) => Promise<unknown> }>;
-  commands: Map<string, { handler: (...args: any[]) => Promise<unknown> }>;
-  notifies: { message: string; type: string | undefined }[];
-}
-
-function createFakePi(): FakePi {
-  const handlers = new Map();
-  const sent: RecordedTurn[] = [];
-  const tools = new Map();
-  const commands = new Map();
-  const notifies: FakePi["notifies"] = [];
-  const api = {
-    on: (event: string, handler: (event: unknown, ctx: never) => unknown) => {
-      handlers.set(event, handler);
-      return () => {
-        handlers.delete(event);
-      };
-    },
-    sendUserMessage: (content: string, options?: unknown): void => {
-      sent.push({ content: String(content), options });
-    },
-    registerTool: (tool: { name: string; execute: (...args: any[]) => Promise<unknown> }): void => {
-      tools.set(tool.name, tool);
-    },
-    registerCommand: (
-      name: string,
-      options: { handler: (...args: any[]) => Promise<unknown> },
-    ): void => {
-      commands.set(name, options);
-    },
-  } as unknown as ExtensionAPI;
-  return { api, handlers, sent, tools, commands, notifies };
-}
-
-function fakeContext(notifies: FakePi["notifies"]): ExtensionContext {
-  return {
-    ui: {
-      notify: (message: string, type?: "info" | "warning" | "error"): void => {
-        notifies.push({ message, type });
-      },
-    },
-    isIdle: () => true,
-    cwd: "/tmp/pi-caretaker-test",
-  } as unknown as ExtensionContext;
-}
-
-const savedEnv = { ...process.env };
+const savedEnv = snapshotEnv();
 
 afterEach(() => {
-  for (const key of Object.keys(process.env)) {
-    if (!(key in savedEnv)) delete process.env[key];
-  }
-  Object.assign(process.env, savedEnv);
+  restoreEnv(savedEnv);
 });
-
-function testEnv(overrides: Record<string, string> = {}): void {
-  delete process.env["PI_CARETAKER_TOKEN"];
-  delete process.env["PI_CARETAKER_HOST"];
-  delete process.env["PI_CARETAKER_PORT"];
-  delete process.env["PI_CARETAKER_ALERTS_QUEUE_CAPACITY"];
-  Object.assign(process.env, {
-    PI_CARETAKER_TOKEN: "test-token",
-    PI_CARETAKER_HOST: "127.0.0.1",
-    PI_CARETAKER_PORT: "0",
-    PI_CARETAKER_ALERTS_QUEUE_CAPACITY: "16",
-    ...overrides,
-  });
-}
-
-async function startedPort(
-  fake: FakePi,
-  ctx: ExtensionContext,
-): Promise<number> {
-  await fake.handlers.get("session_start")?.({}, ctx);
-  const statusHandler = fake.commands.get("caretaker-status");
-  await statusHandler?.handler("", ctx as never);
-  const statusLine = fake.notifies.at(-1)?.message ?? "";
-  const port = Number(/http:\/\/127\.0\.0\.1:(\d+)/.exec(statusLine)?.[1]);
-  expect(port, `status did not report a port: ${statusLine}`).toBeGreaterThan(0);
-  return port;
-}
-
-async function postEvent(
-  port: number,
-  body: unknown,
-  token = "test-token",
-): Promise<{ status: number; json: unknown }> {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-  };
-  if (token !== "") headers.authorization = `Bearer ${token}`;
-  const response = await fetch(`http://127.0.0.1:${port}/events`, {
-    method: "POST",
-    headers,
-    body: typeof body === "string" ? body : JSON.stringify(body),
-  });
-  return { status: response.status, json: await response.json() };
-}
 
 describe("pi-caretaker extension entry", () => {
   it("registers session handlers, a status command, and the notify tool — and starts nothing", () => {
