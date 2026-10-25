@@ -231,11 +231,34 @@ describe("ADR guard (scripts/check-adrs.mjs)", () => {
     });
   });
 
-  // Known gap: `scripts/check-adrs.mjs` line 138 spreads `pointerFiles.get(id)`
-  // which is `undefined` for an accepted decision nothing points at, so the
-  // process dies with a TypeError before it can print rule (d)'s message.
-  // Rule (d) is the one that catches a decision nobody can find from code.
-  it.todo(
-    "rule (d): reports an accepted decision with no code pointer instead of crashing",
-  );
+  describe("rule (d): an accepted decision must be referenced from code", () => {
+    it("reports the missing pointer instead of crashing", () => {
+      const f = fixture();
+      // Valid pins and an index row, so (b) and (c) stay silent and the only
+      // problem left is that no source file points at this decision.
+      addDecision(f, 5, { governed: false });
+      f.commitAll("add accepted decision nothing points at");
+
+      const result = f.runScript(GUARD);
+
+      // The crash is the bug: dying with a TypeError prints a stack trace
+      // instead of the actionable message, so rule (d) never guards anything.
+      expect(result.crashed).toBe(false);
+      expect(result.status).toBe(1);
+      expect(result.output).toContain(`(d) ${adrId(5)} has no code reference`);
+      expect(result.output).not.toContain("TypeError");
+    });
+
+    it("stays quiet when some source file does point at the decision", () => {
+      const f = fixture();
+      addDecision(f, 5, { governed: true });
+      f.commitAll("add accepted decision with a governed source file");
+
+      const result = f.runScript(GUARD);
+
+      expect(result.crashed).toBe(false);
+      expect(result.status).toBe(0);
+      expect(result.output).not.toContain(`(d) ${adrId(5)}`);
+    });
+  });
 });

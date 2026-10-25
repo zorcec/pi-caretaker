@@ -135,7 +135,10 @@ for (const f of adrFiles) {
   }
 
   // Governed set = repo-relative paths of scanned files pointing at this ADR.
-  const governed = [...pointerFiles.get(adrIdOf(f) ?? "")];
+  // `get` returns undefined when nothing points at it — the case rule (d)
+  // exists to report — so default to an empty set instead of spreading
+  // undefined and dying before (d) can print its message.
+  const governed = [...(pointerFiles.get(adrIdOf(f) ?? "") ?? [])];
   if (governed.length === 0) {
     // Reported under (d) below; drift has nothing to compare — skip quietly.
   } else {
