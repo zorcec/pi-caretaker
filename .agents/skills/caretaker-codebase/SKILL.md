@@ -19,10 +19,9 @@ so a stranger cloning it still gets the rules that matter.
   `caretaker-status` and the `caretaker_notify` model tool. Env names are
   provisional (see `src/config.ts`); the Pi API surface comes from
   `@earendil-works/pi-coding-agent` (ADR-0001, ADR-0003, ADR-0004).
-- `config.ts` — provisional operator contract (env names, requiredness,
-  defaults) with `ConfigurationError` codes. No ADR-0005 exists yet: the
-  names await the owner's word, and the tests pin the current contract so a
-  rename breaks loudly in one place. Never log values.
+- `config.ts` — the ADR-0005 operator contract (env names, requiredness,
+  defaults) with `ConfigurationError` codes. Renaming a key breaks
+  `tests/config.test.ts` loudly by design. Never log values.
 - `events.ts` — zod envelope schema, `MAX_EVENT_BODY_BYTES` (64 KiB),
   `isBodyOversized`, triage boundary (`buildTriageRequest`,
   `TRIAGE_INSTRUCTIONS`), and the implemented `handlePostEvents`

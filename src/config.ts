@@ -1,11 +1,11 @@
 /**
- * Runtime configuration (env only — never files, never secrets in logs).
+ * Runtime configuration (ADR-0005; env only — never files, never secrets in logs).
  *
- * Provisional operator contract, flagged for the owner on ticket e443e5b4:
- * the names, requiredness, and defaults below are chosen defaults, not an
- * approved owner decision. Renaming a key is a compatible change to one place
- * (readCaretakerConfig) plus its tests; promoting the contract to an ADR
- * needs the owner's word. Values never appear in errors or logs.
+ * The names below are the owner-approved operator contract (decided
+ * 2026-10-25). Renaming a key is a compatible change to one place
+ * (readCaretakerConfig) plus its tests; changing requiredness, defaults,
+ * or validation updates ADR-0005 in the same commit. Values never appear in
+ * errors or logs.
  */
 export interface CaretakerConfig {
   /** Bearer token POST /events must present. No default — required. */
@@ -58,7 +58,7 @@ function parseCapacity(raw: string | undefined): number {
   if (!Number.isInteger(capacity) || capacity <= 0) {
     throw new ConfigurationError(
       "INVALID_QUEUE_CAPACITY",
-      "PI_CARETAKER_QUEUE_CAPACITY must be a positive integer",
+      "PI_CARETAKER_ALERTS_QUEUE_CAPACITY must be a positive integer",
     );
   }
   return capacity;
@@ -87,6 +87,6 @@ export function readCaretakerConfig(
     token,
     host,
     port: parsePort(env["PI_CARETAKER_PORT"]),
-    queueCapacity: parseCapacity(env["PI_CARETAKER_QUEUE_CAPACITY"]),
+    queueCapacity: parseCapacity(env["PI_CARETAKER_ALERTS_QUEUE_CAPACITY"]),
   };
 }

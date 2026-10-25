@@ -5,11 +5,11 @@ import {
 } from "../src/config.js";
 
 /**
- * Pins the provisional operator contract (ticket e443e5b4).
+ * Pins the ADR-0005 operator contract.
  *
- * Env names, requiredness, and defaults are chosen defaults pending the
- * owner's operator-contract decision — the tests pin exactly what the code reads today so a
- * rename breaks loudly in one place. Values never appear in errors.
+ * Env names, requiredness, and defaults are the accepted contract — the tests
+ * pin exactly what the code reads today so a rename breaks loudly in one
+ * place. Values never appear in errors.
  */
 describe("caretaker configuration", () => {
   const saved = { ...process.env };
@@ -26,7 +26,7 @@ describe("caretaker configuration", () => {
       "PI_CARETAKER_TOKEN",
       "PI_CARETAKER_HOST",
       "PI_CARETAKER_PORT",
-      "PI_CARETAKER_QUEUE_CAPACITY",
+      "PI_CARETAKER_ALERTS_QUEUE_CAPACITY",
     ]) {
       delete process.env[key];
     }
@@ -73,7 +73,7 @@ describe("caretaker configuration", () => {
         PI_CARETAKER_TOKEN: "t",
         PI_CARETAKER_HOST: "0.0.0.0",
         PI_CARETAKER_PORT: "0",
-        PI_CARETAKER_QUEUE_CAPACITY: "5",
+        PI_CARETAKER_ALERTS_QUEUE_CAPACITY: "5",
       }),
     );
 
@@ -99,7 +99,7 @@ describe("caretaker configuration", () => {
     (capacity) => {
       try {
         readCaretakerConfig(
-          env({ PI_CARETAKER_TOKEN: "t", PI_CARETAKER_QUEUE_CAPACITY: capacity }),
+          env({ PI_CARETAKER_TOKEN: "t", PI_CARETAKER_ALERTS_QUEUE_CAPACITY: capacity }),
         );
         expect.unreachable("must throw for a bad capacity");
       } catch (error) {

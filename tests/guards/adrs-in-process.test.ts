@@ -26,7 +26,7 @@ let active: RepoFixture | undefined;
 // that does not exist — rule (a) would then fail the repository itself.
 // (tests/guards/check-adrs.test.ts does the same via adrId().)
 const orphanId = (n: number): string => `ADR-${String(n).padStart(4, "0")}`;
-const ORPHAN_NUM = "0005";
+const ORPHAN_NUM = "0042"; // fixture space (see check-adrs.test.ts)
 const DANGLING_NUM = "9999";
 
 afterEach(() => {
