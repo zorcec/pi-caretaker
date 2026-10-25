@@ -14,6 +14,7 @@ import {
   snapshotEnv,
   startedPort,
   testEnv,
+  waitForNotifies,
   waitForTurns,
 } from "../setup/fake-pi.js";
 
@@ -63,9 +64,40 @@ describe("event pipeline (queue -> triage -> Telegram)", () => {
     expect(seen).toEqual(["a", "b", "c"]);
   });
 
-  it.todo(
-    "escape hatch: a must-notify event notifies exactly once even when the model answers \"ignore\"",
-  );
+  it("escape hatch: a must-notify event notifies exactly once with no model involved", async () => {
+    testEnv();
+    const fake = createFakePi();
+    const delivered: string[] = [];
+    const transport: TelegramAdapter = {
+      notify: async (text: string) => {
+        delivered.push(text);
+      },
+      onMessage: (): void => undefined,
+    };
+    const controls = piCaretaker(fake.api);
+    controls.attachTelegram(transport);
+    const ctx = fakeContext(fake.notifies);
+    const port = await startedPort(fake, ctx);
+
+    // A host-dark envelope through the real socket, queue, pump, and entry.
+    // There is no model in this path by design: the bypass must not depend
+    // on model judgment, so zero submitted turns is the assertion.
+    const { status } = await postEvent(port, {
+      source: "netdata",
+      host: "server-b",
+      event: "host_dark",
+      message: "server-b host gone dark",
+    });
+    expect(status).toBe(202);
+    await waitForNotifies(delivered, 1);
+
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatch(/host-dark/);
+    expect(delivered[0]).not.toContain("server-b host gone dark");
+    expect(fake.sent).toHaveLength(0);
+
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
+  });
 
   it("hostile webhook text reaches the model in the data channel only; instructions stay byte-identical", async () => {
     testEnv();

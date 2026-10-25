@@ -2,12 +2,9 @@
  * Deterministic escape hatch (ADR-0004).
  *
  * "Must never be missed" alerts bypass triage and notify unconditionally,
- * without depending on the model deciding they matter. The mechanism below
- * is complete and tested; the owner vocabulary (which wire values canonically
- * mean host-dark and backups-dead, and which notification fields are safe)
- * is still open on ticket baac47cd, so MUST_NOTIFY_RULES ships EMPTY. An
- * empty list fails safe: everything flows to normal triage, nothing is
- * misclassified, and no silent notification path exists.
+ * without depending on the model deciding they matter. Matching is
+ * deliberately dumb substring matching over the `event` type and `message`
+ * text (lowercased) — no model, no regexes, no semantic judgment.
  */
 import type { EventEnvelope } from "./events.js";
 
@@ -26,10 +23,62 @@ export interface EscapeHatchRule {
 }
 
 /**
- * Owner-reviewed must-notify list. Empty until the owner vocabulary decision
- * lands (ticket baac47cd): no rule, no bypass, no misclassification.
+ * Canonical v1 vocabulary for host-dark (ADR-0004).
+ *
+ * Exactly the ADR's own wording plus mechanical slug variants
+ * (space/hyphen/underscore forms). Deliberately NOT included: vaguer
+ * phrases like "host unreachable" or "host down", which describe different
+ * alert semantics (often flapping monitors) — the owner can promote them
+ * with an ADR-0004 update.
  */
-export const MUST_NOTIFY_RULES: readonly EscapeHatchRule[] = [];
+export const HOST_DARK_PATTERNS: readonly string[] = [
+  "host gone dark",
+  "host is dark",
+  "host_dark",
+  "host-dark",
+  "hostdown",
+  "host_down",
+];
+
+/**
+ * Canonical v1 vocabulary for backups-dead (ADR-0004). Same policy as
+ * above: ADR wording plus mechanical variants, singular and plural.
+ */
+export const BACKUPS_DEAD_PATTERNS: readonly string[] = [
+  "backups dead",
+  "backup dead",
+  "backups-dead",
+  "backup-dead",
+  "backups_dead",
+  "backup_dead",
+];
+
+function haystack(envelope: EventEnvelopeLike): string {
+  return `${envelope.event ?? ""}\n${envelope.message}`.toLowerCase();
+}
+
+function includesAny(text: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) => text.includes(pattern));
+}
+
+/**
+ * Owner-reviewed must-notify list: the two ADR-0004 classes with the
+ * canonical v1 vocabulary above. Everything else flows to normal triage.
+ * Narrowing needs no ADR; broadening the vocabulary (new phrases, new
+ * fields, new classes) needs an ADR-0004 update first.
+ */
+export const MUST_NOTIFY_RULES: readonly EscapeHatchRule[] = [
+  {
+    kind: "host-dark",
+    match: (envelope) =>
+      includesAny(haystack(envelope), HOST_DARK_PATTERNS),
+  },
+  {
+    kind: "backups-dead",
+    match: (envelope) =>
+      includesAny(haystack(envelope), BACKUPS_DEAD_PATTERNS),
+  },
+];
 
 export interface EscapeHatchMatch {
   kind: EscapeHatchKind;

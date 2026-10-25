@@ -10,6 +10,7 @@ Code points at these files with `ADR-NNNN`.
 | [0003](0003-one-telegram-path.md) | One Telegram path | accepted | 2026-10-25 | This project owns the Telegram conversation; no second notifier may post there. | `tests/telegram-path.test.ts` |
 | [0004](0004-deterministic-escape-hatch.md) | Deterministic escape hatch | accepted | 2026-10-25 | Host-dark and backups-dead alerts bypass triage and must not depend on model judgment. | `tests/escape-hatch.test.ts` |
 | [0005](0005-runtime-configuration.md) | Runtime configuration contract | accepted | 2026-10-25 | Four env vars (token required); invalid values fail loudly; values never logged. | `tests/config.test.ts` |
+| [0006](0006-serialized-triage-turns.md) | Triage turns serialize through Pi's native queue | accepted | 2026-10-25 | One session; background turns via followUp behind a single-flight pump; no custom serializer. | `tests/index.test.ts`, `tests/e2e/pipeline.e2e.test.ts` |
 
 How to add a decision: copy `TEMPLATE.md` to `NNNN-short-name.md`, fill it in,
 add one row above, and leave a one-line pointer in the code it governs.

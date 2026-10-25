@@ -1,5 +1,5 @@
 /**
- * pi-caretaker extension entry (ADR-0001, ADR-0003, ADR-0004).
+ * pi-caretaker extension entry (ADR-0001, ADR-0003, ADR-0004, ADR-0006).
  *
  * A real Pi extension: the default export is the extension factory Pi calls
  * with its ExtensionAPI. Long-lived resources follow the Pi lifecycle —
@@ -110,18 +110,18 @@ export default function piCaretaker(pi: ExtensionAPI): CaretakerControls {
   let telegram: NotifyTransport | undefined;
   let stopped = false;
 
+  /**
+   * One turn per admitted event, serialized through Pi's native queue
+   * (ADR-0006): the single-flight pump submits at most one turn, and
+   * followUp delivery lets Pi order it against a running turn.
+   */
   async function deliver(event: { body: EventEnvelope }): Promise<void> {
     const envelope = event.body;
     const match = matchEscapeHatch(envelope);
-    /* v8 ignore start -- unreachable until the owner vocabulary decision lands
-       (ticket baac47cd): MUST_NOTIFY_RULES is empty, so match is always
-       undefined here. The branch is covered at the unit level by the
-       routeEscapeHatch tests in tests/escape-hatch.test.ts. */
     if (match !== undefined && telegram !== undefined) {
       await telegram.notify(formatEscapeHatchNotification(match, envelope));
       return;
     }
-    /* v8 ignore stop */
     // No transport configured yet (Telegram ticket): triage is the only
     // channel, so fall through loudly rather than dropping the event.
     pi.sendUserMessage(composeTriageTurn(envelope), {

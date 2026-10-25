@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BACKUPS_DEAD_PATTERNS,
   formatEscapeHatchNotification,
+  HOST_DARK_PATTERNS,
   matchEscapeHatch,
   MUST_NOTIFY_RULES,
   routeEscapeHatch,
@@ -10,14 +12,11 @@ import {
 import { createRecordingTelegram } from "./setup/doubles.js";
 
 /**
- * Pins the deterministic escape-hatch mechanism (ADR-0004).
- *
- * The owner vocabulary decision (which wire values mean host-dark and
- * backups-dead) is still open on ticket baac47cd, so MUST_NOTIFY_RULES ships
- * empty and every behavioral case uses fixture rules defined here. What these
- * tests pin is the mechanism: a match notifies exactly once and never reaches
- * triage; anything else flows through untouched. The pipeline-level case
- * (real queue + real seam) stays an it.todo until ticket 6e7eaef7 lands.
+ * Pins the deterministic escape hatch (ADR-0004): the mechanism plus the
+ * canonical v1 vocabulary. Fixture rules below prove the mechanism is
+ * rule-agnostic; the canonical cases prove the shipped list matches the
+ * ADR's two classes and nothing else. The pipeline-level case
+ * (real queue + real seam) lives in tests/e2e/pipeline.e2e.test.ts.
  */
 const HOST_DARK: EscapeHatchRule = {
   kind: "host-dark",
@@ -52,10 +51,45 @@ describe("deterministic escape hatch", () => {
       expect(matchEscapeHatch(envelope({ message: "host_dark_fixture" }), RULES)).toBeUndefined();
     });
 
-    it("ships with an empty owner list: nothing bypasses by default", () => {
-      expect(MUST_NOTIFY_RULES).toEqual([]);
+    it("ships exactly the two ADR-0004 classes, in order", () => {
+      expect(MUST_NOTIFY_RULES.map((rule) => rule.kind)).toEqual([
+        "host-dark",
+        "backups-dead",
+      ]);
+      expect(HOST_DARK_PATTERNS.length).toBeGreaterThan(0);
+      expect(BACKUPS_DEAD_PATTERNS.length).toBeGreaterThan(0);
+    });
+
+    it("matches the ADR wording in the message body", () => {
       expect(
-        matchEscapeHatch(envelope({ event: "host_dark_fixture" })),
+        matchEscapeHatch(envelope({ message: "server-b host gone dark" }))?.kind,
+      ).toBe("host-dark");
+      expect(
+        matchEscapeHatch(envelope({ message: "nightly backups dead" }))?.kind,
+      ).toBe("backups-dead");
+    });
+
+    it("matches slug variants in the event type", () => {
+      expect(matchEscapeHatch(envelope({ event: "host_dark" }))?.kind).toBe(
+        "host-dark",
+      );
+      expect(matchEscapeHatch(envelope({ event: "backups-dead" }))?.kind).toBe(
+        "backups-dead",
+      );
+      expect(matchEscapeHatch(envelope({ event: "backup_dead" }))?.kind).toBe(
+        "backups-dead",
+      );
+    });
+
+    it("does not match near-misses", () => {
+      expect(
+        matchEscapeHatch(envelope({ message: "backup dancer scheduled" })),
+      ).toBeUndefined();
+      expect(
+        matchEscapeHatch(envelope({ message: "hostel closed for winter" })),
+      ).toBeUndefined();
+      expect(
+        matchEscapeHatch(envelope({ message: "disk full", event: "disk_full" })),
       ).toBeUndefined();
     });
   });
@@ -114,6 +148,25 @@ describe("deterministic escape hatch", () => {
       expect(result).toEqual({ bypassedTriage: false });
       expect(telegram.notifies).toHaveLength(0);
       expect(seen).toEqual([input]);
+    });
+
+    it("bypasses triage for canonical vocabulary using the default rules", async () => {
+      const telegram = createRecordingTelegram();
+      let continuations = 0;
+      const result = await routeEscapeHatch(
+        envelope({ message: "db-primary host gone dark" }),
+        telegram,
+        MUST_NOTIFY_RULES,
+        async () => {
+          continuations += 1;
+        },
+      );
+
+      expect(result).toEqual({ bypassedTriage: true, kind: "host-dark" });
+      expect(telegram.notifies).toHaveLength(1);
+      expect(telegram.notifies[0]?.text).toMatch(/host-dark/);
+      expect(telegram.notifies[0]?.text).not.toContain("db-primary");
+      expect(continuations).toBe(0);
     });
 
     it("lets a notify failure propagate without falling through to triage", async () => {

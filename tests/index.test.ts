@@ -13,6 +13,7 @@ import {
   snapshotEnv,
   startedPort,
   testEnv,
+  waitForNotifies,
 } from "./setup/fake-pi.js";
 
 /**
@@ -229,6 +230,34 @@ describe("pi-caretaker extension entry", () => {
 
     expect(result.details).toEqual({ sent: true });
     expect(delivered).toEqual(["host dark"]);
+  });
+
+  it("notifies through the attached transport for a must-notify event and submits no turn", async () => {
+    testEnv();
+    const fake = createFakePi();
+    const delivered: string[] = [];
+    const controls = piCaretaker(fake.api);
+    const transport: TelegramAdapter = {
+      notify: async (text: string) => {
+        delivered.push(text);
+      },
+      onMessage: (): void => undefined,
+    };
+    controls.attachTelegram(transport);
+    const ctx = fakeContext(fake.notifies);
+    const port = await startedPort(fake, ctx);
+
+    const { status } = await postEvent(port, {
+      message: "db-primary host gone dark",
+    });
+    expect(status).toBe(202);
+    await waitForNotifies(delivered, 1);
+
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatch(/host-dark/);
+    expect(fake.sent).toHaveLength(0);
+
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
 
   it("shutdown is idempotent and closes the socket", async () => {

@@ -130,6 +130,23 @@ export async function postEvent(
 }
 
 /** Poll until n turns are submitted, failing loudly on timeout. */
+/** Poll delivered notifications until n arrive, failing loudly on timeout. */
+export async function waitForNotifies(
+  delivered: readonly unknown[],
+  count: number,
+  timeoutMs = 2000,
+): Promise<void> {
+  const start = Date.now();
+  while (delivered.length < count) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(
+        `timed out waiting for ${count} notification(s), got ${delivered.length}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 export async function waitForTurns(
   fake: FakePi,
   count: number,
