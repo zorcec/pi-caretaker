@@ -31,6 +31,18 @@
       "text": "Partial progress 2026-10-25 (queue ticket 6a8e1458): the sequential-delivery, capacity-overflow and restart-loss todos are now real tests against the production queue and green. Remaining todos (escape hatch, hostile-text channel, silence observable, Telegram reply) need the background seam from ticket 6e7eaef7, which is blocked on the Pi API owner decision.",
       "author": "agent",
       "createdAt": "2026-10-25T17:51:47.386Z"
+    },
+    {
+      "id": "fgi9jmxtrebghosnx349dozc",
+      "text": "Progress 2026-10-25: hostile-channel and silence-observable pipeline cases are now real tests (Tier 4, real listener + queue + pump + fake Pi, green). Shared fake-pi harness extracted to tests/setup/fake-pi.ts; index.test.ts refactored onto it. Remaining todos: escape-hatch pipeline case (blocked on owner vocabulary, ticket baac47cd) and Telegram-reply case (blocked on real session/Pitgram, ticket 17c69a53).",
+      "author": "agent",
+      "createdAt": "2026-10-25T20:51:17.211Z"
+    },
+    {
+      "id": "tniqkciz74orzo53i1xfew2y",
+      "text": "Progress: escape-hatch pipeline case is now real (real socket/queue/pump/entry/fake transport: one notify, zero turns, hostile text never quoted). 6/7 pipeline cases green. Remaining todo: Telegram-reply-in-same-session — blocked on the real adapter (f8f1f597/Pitgram).",
+      "author": "agent",
+      "createdAt": "2026-10-25T21:05:17.221Z"
     }
   ],
   "files": [
@@ -39,5 +51,5 @@
       "addedAt": "2026-10-25T17:03:09.549Z"
     }
   ],
-  "updated": "2026-10-25T17:53:38.554Z"
+  "updated": "2026-10-25T21:05:55.306Z"
 }

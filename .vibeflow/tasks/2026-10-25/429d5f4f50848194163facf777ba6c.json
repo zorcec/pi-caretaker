@@ -1,7 +1,7 @@
 {
   "title": "Escape hatch enforcement for ADR-0004",
   "description": "ADR-0004 claims host-dark and backups-dead alerts bypass triage deterministically, but there is no escape hatch code anywhere: the pin tests/escape-hatch.test.ts greps three phrases out of src/prompts/triage.md, which proves prose, not behavior. Implement the owner reviewed must-never-miss list as a real bypass before triage, then move the pin to a behavioral test in tests/e2e/pipeline.e2e.test.ts (notify exactly once with the model stubbed to ignore).",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -27,6 +27,12 @@
       "text": "Partial progress 2026-10-25 (escape-hatch ticket baac47cd): the mechanism is implemented and pinned behaviorally in tests/escape-hatch.test.ts (7 tests, green). The pipeline-level case (real queue + real seam, model stubbed to ignore, exactly one notify) stays pending the background seam from ticket 6e7eaef7.",
       "author": "agent",
       "createdAt": "2026-10-25T17:51:48.698Z"
+    },
+    {
+      "id": "ehzjmfphgyuahfw8uuxhned6",
+      "text": "**What changed — enforcement is behavioral, not prose (verified on origin/main).** `src/escape-hatch.ts` ships the two ADR-0004 classes with a canonical v1 vocabulary (ADR wording plus mechanical slug variants; near-misses like \"backup dancer\" and \"hostel closed\" provably do not match). `routeEscapeHatch` is wired into the entry `deliver()` ahead of triage: match + transport → exactly one `notify`, zero turns. `tests/escape-hatch.test.ts` (11 tests: canonical matches, slug variants, near-misses, default-rules bypass, no-fallthrough) plus the pipeline e2e escape case (real socket → queue → pump → entry → fake transport: one notify, zero turns, hostile text never quoted).\n\n**Red to green.** Tests written against missing/empty vocabulary failed first; the empty-list safety test was replaced by populated-list tests once the owner direction landed (\"do all you can\" + canonical-vocabulary decision).\n\n**Remaining owner surface (unchanged).** Vocabulary refinement (promotion of vaguer phrases like \"host unreachable\", new classes) still needs ADR-0004 updates. Telegram transport still pending 17c69a53/f8f1f597 — matches currently fall through to triage loudly rather than dropping.",
+      "author": "agent",
+      "createdAt": "2026-10-25T21:05:11.506Z"
     }
   ],
   "files": [
@@ -35,5 +41,5 @@
       "addedAt": "2026-10-25T17:03:10.163Z"
     }
   ],
-  "updated": "2026-10-25T17:53:38.553Z"
+  "updated": "2026-10-25T21:05:55.306Z"
 }

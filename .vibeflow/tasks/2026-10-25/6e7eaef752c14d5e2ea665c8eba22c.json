@@ -1,7 +1,7 @@
 {
   "title": "Background triage turn with serialized session",
   "description": "Submit admitted events as background agent turns into one persistent Pi session, serialized against Telegram input so the two never contend for the turn. Use buildTriageRequest so webhook text stays in the data channel and the instruction channel stays the fixed repo-owned string (ADR-0002), with src/prompts/triage.md as the guidance. Default to silence; only a deliberate notify posts (ADR-0003).",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -28,6 +28,12 @@
       "text": "**What changed — implemented as part of e443e5b4 (same session, same commits).** The delivery consumer in src/index.ts IS the background-triage wiring: each admitted event becomes one turn via `pi.sendUserMessage(triageText, { deliverAs: \"followUp\" })`, where the text carries the fixed repo-owned instructions plus the envelope as labeled untrusted data (ADR-0002 split preserved from `buildTriageRequest`). Serialization is two-layer: the single-flight pump submits at most one turn at a time, and Pi itself queues follow-up turns behind a running one — no turn contention with Telegram input by construction.\n\n**Open decisions resolved here vs still open.** Resolved: Pi package is now a real dependency (`@earendil-works/pi-coding-agent@^1.4.0`); triage guidance needs no runtime md loading (the fixed instruction string is compiled in, the md stays human documentation); failure policy is stop-and-surface (durable retry explicitly out, needs its own ADR). Still open and NOT claimed here: the Pitgram shared-session validation (ticket 17c69a53) — the turn submission works against any Pi runtime, but silent-turn behavior with Pitgram attached is unverified until that spike runs.\n\n**Verification.** tests/index.test.ts: admitted POST produces exactly one follow-up turn containing TRIAGE_INSTRUCTIONS verbatim before the event data (hostile-text test), and an ordinary event produces a turn with zero Telegram calls (silence test). Full gate green in the same session.",
       "createdAt": "2026-10-25T18:24:21.934Z",
       "source": "cli"
+    },
+    {
+      "id": "oof2a7lj5ztenm1ne6ilefip",
+      "text": "**What changed — background triage wiring is live (verified on origin/main).** The entry `deliver()` consumer IS the turn submission: admitted events become one `pi.sendUserMessage` follow-up turn each, with trusted instructions verbatim first and the full envelope as labeled untrusted data (ADR-0002 split preserved from `buildTriageRequest`). Serialization is two-layer and involves no custom session construct (ADR-0006): the single-flight pump submits at most one turn at a time, and Pi orders follow-ups against a running turn natively.\n\n**Covered by tests (all green).** `tests/index.test.ts`: hostile text reaches the turn's data channel with byte-identical instructions; silence case submits exactly one turn and zero Telegram calls; escape-with-transport case notifies once with zero turns. `tests/e2e/pipeline.e2e.test.ts`: the same two paths end-to-end over a real socket/queue/pump. Failure policy: consumer throw stops the pump and surfaces via `drained()` (documented; durable retry stays out per V1 non-goals).\n\n**Explicitly not claimed.** Shared-session validation with Pitgram attached stays with 17c69a53; Telegram reply-in-same-session stays pending the adapter. The plan's custom-serializer module and ADR-0005-for-session were superseded: Pi owns serialization (ADR-0006), and the 0005 number now records the runtime contract.",
+      "author": "agent",
+      "createdAt": "2026-10-25T21:05:02.866Z"
     }
   ],
   "files": [
@@ -36,7 +42,7 @@
       "addedAt": "2026-10-25T16:25:24.007Z"
     }
   ],
-  "updated": "2026-10-25T20:46:21.374Z",
+  "updated": "2026-10-25T21:05:55.306Z",
   "verified": true,
   "commits": [
     {

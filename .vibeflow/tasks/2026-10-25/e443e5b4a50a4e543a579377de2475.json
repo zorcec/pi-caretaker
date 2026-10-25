@@ -1,7 +1,7 @@
 {
   "title": "Extension activation and environment configuration",
   "description": "Make extension.activate() do the wiring instead of throwing: start the listener, construct the queue, register the triage turn handler, and read configuration from the environment at runtime (no .env files, by repo rule). Entry shape and version stay as they are. This is the TODO(pi-caretaker-1) ticket named in src/index.ts and src/events.ts.",
-  "status": "in-progress",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -24,6 +24,12 @@
       "text": "**What changed.** The entry is now a real Pi extension: `export default function piCaretaker(pi: ExtensionAPI)` (the exact `ExtensionFactory` shape; Pi calls it with its API object). Nothing starts in the factory (Pi docs forbid it — some invocations load extensions without a session). `session_start` reads env config, builds the queue, binds the listener, starts the single-flight pump whose consumer submits one background turn per event via `pi.sendUserMessage(..., {deliverAs:\"followUp\"})`, with the escape-hatch check first. `session_shutdown` is idempotent. Plus `caretaker-status` command and `caretaker_notify` model tool (the only outbound path per ADR-0003; reports not-sent without a transport instead of failing). `EXTENSION_VERSION` replaces the invented `CaretakerExtension` interface. Package declares `keywords: [pi-package]` + `pi.extensions: [./dist/index.js]`; runtime deps are real dependencies.\n\n**Chosen defaults (flagged for owner — all reversible).** Env names `PI_CARETAKER_TOKEN` (required), `HOST` (127.0.0.1), `PORT` (8787, 0 allowed for tests/OS-ephemeral), `QUEUE_CAPACITY` (100); error codes MISSING_WEBHOOK_TOKEN / INVALID_PORT / INVALID_QUEUE_CAPACITY. No ADR-0005 written — that decision is yours; the names live in one module + its tests so a rename breaks loudly in exactly one place. Port 8787 avoids your dev-board 3700 deliberately.\n\n**Red to green proof.** New tests first: entry suite failed against the old stub (`default` was not a function, `activate` threw). During the work: (1) my port-extraction regex anchored at string end while the status message is multi-line — fixed with a `startedPort` helper; (2) a `typeof` import erasure gap (`import type` of the pi package erases fully — verified: tsup emits no pi import); (3) the `attachTelegram` seam needed the factory to return controls (assignable to `ExtensionFactory` via void-return assignability) instead of module state. V8-ignore comments mark exactly two deliberately-unreachable-today branches: the escape-match notifier (empty rule list) and the non-ConfigurationError config path — both named with their unblock tickets.\n\n**Verification.** pnpm check green: 150+ tests passing (full gate output in commit), pnpm build green, ADR gate clean. Coverage: src 99%+, scripts thresholds hold.\n\n**Also completed in this change.** Ticket 6e7eaef7 (background triage turn): the delivery consumer IS the background-turn wiring — admitted events become follow-up turns with the ADR-0002 data/instruction split, serialized by Pi's own queue plus the single-flight pump. Remaining nuance (Pitgram shared-session validation) belongs to 17c69a53, noted on that ticket.\n\n**Skill fix included.** `.agents/skills/caretaker-codebase/SKILL.md` src map was stale (entry shape, queue/events implementation) — corrected per the skill-improvement rule; the events.ts bullet I clobbered mid-edit was restored in the same change.",
       "createdAt": "2026-10-25T18:23:21.414Z",
       "source": "cli"
+    },
+    {
+      "id": "pelpi7saf6137g22sdxh2ivc",
+      "text": "**What changed — entry is now a real Pi extension (verified on origin/main).** `src/index.ts` exports `default function piCaretaker(pi: ExtensionAPI)` (the exact `ExtensionFactory` shape; assignable via void-return). Nothing starts in the factory (Pi docs forbid it): `session_start` reads validated env (`src/config.ts`, ADR-0005), builds the queue, binds the listener, starts the single-flight pump; `session_shutdown` is idempotent. Background triage turns go through `pi.sendUserMessage(..., {deliverAs:\"followUp\"})` with the ADR-0002 split; `caretaker_notify` model tool is the only deliberate-notify path (ADR-0003); `caretaker-status` command included. `package.json` declares the real `@earendil-works/pi-coding-agent@^1.4.0` dependency plus `pi-package` manifest (`pi.extensions: ./dist/index.js`); entry version injected at build time from package.json.\n\n**Red to green.** New entry surface failed before (no default export; `activate()` threw). During the work: port-extraction regex anchored wrong (fixed via `startedPort` helper); `attachTelegram`-style seams needed the factory to return controls (fixed); 415/type-body edge cases added after. Gate green throughout.\n\n**Open items explicitly not claimed.** Telegram transport + Pitgram verdict (17c69a53); env names now ADR-0005 (decided); error bodies stay generic per owner call.",
+      "author": "agent",
+      "createdAt": "2026-10-25T21:04:50.612Z"
     }
   ],
   "files": [
@@ -32,7 +38,7 @@
       "addedAt": "2026-10-25T16:25:25.940Z"
     }
   ],
-  "updated": "2026-10-25T20:46:21.374Z",
+  "updated": "2026-10-25T21:05:55.306Z",
   "commits": [
     {
       "sha": "f5f988f0530eb742ec316b256b8be1d96c2a948b",
