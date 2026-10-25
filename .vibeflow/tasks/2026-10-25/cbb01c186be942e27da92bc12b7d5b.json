@@ -1,0 +1,23 @@
+{
+  "title": "Set up vitest projects, test kit and coverage gate",
+  "description": "The test foundation this tree builds on, already implemented: vitest.config.ts defines four projects (unit/guards/build/e2e) run by one vitest run, vitest.live.config.ts isolates the network tier so pnpm test can never reach it, package.json gained test:watch/test:unit/test:e2e/test:live, tsconfig includes the live config, tests/setup/ holds the repo fixture and recording doubles, tests/guards/ covers all three guard scripts plus the husky hooks, tests/build/artifact.test.ts runs tsup into a temp dir and imports the artifact, tests/testkit.test.ts pins the doubles, and tests/scaffold.test.ts pins the current not-implemented stubs. Coverage is v8 with thresholds keyed to src/** (statements 95, functions 100, branches 85, lines 95), proven able to fail at 99. Result: 63 passing + 22 todo in 14 files, src at 97.91% statements.",
+  "status": "in-progress",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "Critical",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000022000000",
+  "id": "cbb01c186be942e27da92bc12b7d5b",
+  "created": "2026-10-25T17:05:51.690Z",
+  "comments": [],
+  "files": [],
+  "updated": "2026-10-25T17:06:03.970Z"
+}
