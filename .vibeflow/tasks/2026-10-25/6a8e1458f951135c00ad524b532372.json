@@ -1,7 +1,7 @@
 {
   "title": "Bounded in-memory queue with sequential delivery",
   "description": "Implement the EventQueue interface from src/queue.ts: bounded FIFO, monotonically increasing seq, ISO receivedAt, rejection with reason full at capacity, and strictly sequential single-consumer delivery into Pi. Deliberately not crash durable: events at restart are lost by design, which is ADR-0001, not a bug. Admission and overflow semantics are what the overload status codes in the listener depend on.",
-  "status": "todo",
+  "status": "backlog",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Critical",
@@ -24,5 +24,5 @@
       "addedAt": "2026-10-25T16:25:25.309Z"
     }
   ],
-  "updated": "2026-10-25T16:25:25.309Z"
+  "updated": "2026-10-25T17:19:55.977Z"
 }

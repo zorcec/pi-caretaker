@@ -1,7 +1,7 @@
 {
   "title": "Deterministic escape hatch bypass",
   "description": "Implement ADR-0004 as code: an owner-reviewed must-never-miss list (host gone dark, backups dead) checked before triage and notified unconditionally, without the model deciding anything. Today the only enforcement point is a regex over src/prompts/triage.md, which pins prose rather than behavior. The list stays short and its contents are an owner decision.",
-  "status": "todo",
+  "status": "backlog",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Critical",
@@ -24,5 +24,5 @@
       "addedAt": "2026-10-25T16:25:28.466Z"
     }
   ],
-  "updated": "2026-10-25T16:25:28.467Z"
+  "updated": "2026-10-25T17:19:55.978Z"
 }

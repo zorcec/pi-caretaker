@@ -1,7 +1,7 @@
 {
   "title": "Queue and triage pipeline e2e suite",
   "description": "Blocked by the queue implementation (src/queue.ts is interface only). tests/e2e/pipeline.e2e.test.ts holds 7 it.todo cases using the recording doubles from tests/setup/doubles.ts: sequential non-interleaved delivery of concurrent arrivals, escape hatch notifying exactly once even when the model answers ignore, hostile webhook text reaching the model in the data channel only, silence on a not important verdict, capacity overflow rejecting only the arrival beyond capacity, documented event loss on restart, and Telegram replies keeping event context.",
-  "status": "todo",
+  "status": "backlog",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -9,6 +9,14 @@
     {
       "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
       "type": "parent"
+    },
+    {
+      "type": "blocks",
+      "taskId": "6a8e1458f951135c00ad524b532372"
+    },
+    {
+      "type": "blocks",
+      "taskId": "6e7eaef752c14d5e2ea665c8eba22c"
     }
   ],
   "openedBy": [
@@ -24,5 +32,5 @@
       "addedAt": "2026-10-25T17:03:09.549Z"
     }
   ],
-  "updated": "2026-10-25T17:03:09.549Z"
+  "updated": "2026-10-25T17:19:55.978Z"
 }

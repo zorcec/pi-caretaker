@@ -1,7 +1,7 @@
 {
   "title": "Telegram adapter and Pitgram spike",
   "description": "src/telegram/index.ts is type-only (a test pins zero runtime keys). Run the proof-of-concept list from docs/concept/pi-caretaker-high-level-concept-v3.md against a persistent Pi with pi-caretaker and Pitgram loaded: auth, silent background turn, explicit notify, reply context, sequential load, restart recovery. Record the verdict in docs/research/README.md. If Pitgram cannot keep background turns silent in the shared session, fall back to the smallest grammY bridge and write a new ADR rather than drifting.",
-  "status": "todo",
+  "status": "backlog",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -24,5 +24,5 @@
       "addedAt": "2026-10-25T17:03:07.734Z"
     }
   ],
-  "updated": "2026-10-25T17:03:07.734Z"
+  "updated": "2026-10-25T17:19:55.977Z"
 }

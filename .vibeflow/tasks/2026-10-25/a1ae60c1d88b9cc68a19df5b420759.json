@@ -1,7 +1,7 @@
 {
   "title": "Live e2e suite",
   "description": "Tier 5 lives in vitest.live.config.ts and never runs in pnpm test or pnpm check, because a flaky third party must not block a commit. tests/live/smoke.live.test.ts holds 6 it.todo cases: vibeflow posting a real envelope for a 202, a background turn producing zero Telegram output, an explicit notify reaching the chat, a reply keeping event context, sequential handling of several webhooks during a busy turn, and restart recovering the session while losing only queued events.",
-  "status": "todo",
+  "status": "backlog",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Medium",
@@ -9,6 +9,10 @@
     {
       "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
       "type": "parent"
+    },
+    {
+      "type": "blocks",
+      "taskId": "dadd90aec7544b88ffe88bb6bcba2c"
     }
   ],
   "openedBy": [
@@ -24,5 +28,5 @@
       "addedAt": "2026-10-25T17:03:11.364Z"
     }
   ],
-  "updated": "2026-10-25T17:03:11.364Z"
+  "updated": "2026-10-25T17:19:55.978Z"
 }
