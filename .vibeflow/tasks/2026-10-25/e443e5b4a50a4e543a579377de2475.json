@@ -1,0 +1,28 @@
+{
+  "title": "Extension activation and environment configuration",
+  "description": "Make extension.activate() do the wiring instead of throwing: start the listener, construct the queue, register the triage turn handler, and read configuration from the environment at runtime (no .env files, by repo rule). Entry shape and version stay as they are. This is the TODO(pi-caretaker-1) ticket named in src/index.ts and src/events.ts.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "links": [
+    {
+      "taskId": "0ce8c29edee87ade5c6ca89f4a3c77",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000016000000",
+  "id": "e443e5b4a50a4e543a579377de2475",
+  "created": "2026-10-25T16:17:44.352Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "e443e5b4-implementation-plan.md",
+      "addedAt": "2026-10-25T16:25:25.940Z"
+    }
+  ],
+  "updated": "2026-10-25T16:25:25.940Z"
+}

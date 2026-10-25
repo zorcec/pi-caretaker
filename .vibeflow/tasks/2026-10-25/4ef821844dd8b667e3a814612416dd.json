@@ -1,0 +1,28 @@
+{
+  "title": "Health reachable from the packaged entry",
+  "description": "src/index.ts never imports src/health.ts, so getHealth and the build-time __PI_CARETAKER_COMMIT__ substitution are absent from dist/index.js and no consumer can reach health from the package. Wire health into the entry as part of the listener work so the deployed commit is reported, and keep the build test in tests/build/artifact.test.ts asserting commit equals git rev-parse short HEAD.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "Medium",
+  "links": [
+    {
+      "taskId": "0ce8c29edee87ade5c6ca89f4a3c77",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000020000000",
+  "id": "4ef821844dd8b667e3a814612416dd",
+  "created": "2026-10-25T16:17:46.848Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "4ef82184-implementation-plan.md",
+      "addedAt": "2026-10-25T16:25:24.670Z"
+    }
+  ],
+  "updated": "2026-10-25T16:25:24.671Z"
+}

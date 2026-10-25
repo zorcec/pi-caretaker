@@ -1,0 +1,28 @@
+{
+  "title": "Answer the CI gating question",
+  "description": "AGENTS.md open question: this will be a public repo, and there is no CI, so a push is only as safe as local hooks, which do not run on a stranger's fork. Today the whole 63 test suite plus both guards exist only on this machine. Decide between remote CI, required reviews, or both, then record the answer in AGENTS.md. Until then do not merge external PRs on green looking checks alone.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000012000000",
+  "id": "f0b7259558460ceadde68d9e9a0207",
+  "created": "2026-10-25T16:14:39.113Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "f0b72595-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:10.764Z"
+    }
+  ],
+  "updated": "2026-10-25T17:03:10.764Z"
+}

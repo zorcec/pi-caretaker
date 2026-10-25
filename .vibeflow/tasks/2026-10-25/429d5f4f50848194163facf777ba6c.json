@@ -1,0 +1,28 @@
+{
+  "title": "Escape hatch enforcement for ADR-0004",
+  "description": "ADR-0004 claims host-dark and backups-dead alerts bypass triage deterministically, but there is no escape hatch code anywhere: the pin tests/escape-hatch.test.ts greps three phrases out of src/prompts/triage.md, which proves prose, not behavior. Implement the owner reviewed must-never-miss list as a real bypass before triage, then move the pin to a behavioral test in tests/e2e/pipeline.e2e.test.ts (notify exactly once with the model stubbed to ignore).",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000008000000",
+  "id": "429d5f4f50848194163facf777ba6c",
+  "created": "2026-10-25T16:14:36.234Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "429d5f4f-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:10.163Z"
+    }
+  ],
+  "updated": "2026-10-25T17:03:10.163Z"
+}

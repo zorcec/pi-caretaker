@@ -1,0 +1,28 @@
+{
+  "title": "Make health reachable from the packaged entry",
+  "description": "src/index.ts never imports src/health.ts, so getHealth and the build time commit injection are absent from dist/index.js and a consumer cannot reach GET /health from the package at all. The tsup define is therefore unreachable through the public surface. tests/build/artifact.test.ts bundles health.ts explicitly to prove injection works (commit equals git rev-parse short HEAD) and carries an it.todo for the entry level assertion. Resolve together with the listener ticket.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "Medium",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000009000000",
+  "id": "716c69edfcc7b3d126e6962f2cdab6",
+  "created": "2026-10-25T16:14:36.925Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "716c69ed-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:08.930Z"
+    }
+  ],
+  "updated": "2026-10-25T17:03:08.931Z"
+}

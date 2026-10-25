@@ -1,0 +1,28 @@
+{
+  "title": "Decide ADR drift rule (e) re-affirmation",
+  "description": "Rule (e) fails when codeDay is later than adrDay, compared by day. The decision docs were last committed 2026-10-25, so from 2026-10-26 any commit touching a file containing an ADR pointer fails until the ADR doc is also touched in that commit. Almost every src and existing test file is governed, which effectively means every code commit must re-affirm its ADRs. Owner decision: confirm that is intended, or change the comparison (grace window, or drift only when the ADR body actually changed).",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "Medium",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000004000000",
+  "id": "d3322341e7572c56198fca7f1fd749",
+  "created": "2026-10-25T16:14:33.030Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "d3322341-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:08.326Z"
+    }
+  ],
+  "updated": "2026-10-25T17:03:08.327Z"
+}

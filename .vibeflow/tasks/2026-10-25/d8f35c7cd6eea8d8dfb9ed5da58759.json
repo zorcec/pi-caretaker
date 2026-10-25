@@ -1,0 +1,33 @@
+{
+  "title": "Initial testing",
+  "description": "Test framework setup (vitest projects: unit/guards/build/e2e + separate live config), 63 passing tests and a src coverage gate at 97.91%. Children cover the gaps found while setting it up: guard bugs, uncounted coverage, pending e2e tiers, and the decisions that block them.",
+  "status": "in-progress",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000023000000",
+  "id": "d8f35c7cd6eea8d8dfb9ed5da58759",
+  "created": "2026-10-25T16:14:03.948Z",
+  "comments": [
+    {
+      "id": "3475bf346eaf00df",
+      "author": "agent",
+      "text": "Root claimed: the test foundation is implemented and in review under child cbb01c18 (vitest projects, test kit, coverage gate, 63 passing / 22 todo, src 97.91%). This root stays in-progress until its 11 children land.",
+      "createdAt": "2026-10-25T17:06:59.426Z",
+      "source": "cli"
+    }
+  ],
+  "files": [
+    {
+      "name": "master-test-plan.md",
+      "addedAt": "2026-10-25T17:03:12.602Z"
+    }
+  ],
+  "expandedBy": [
+    "root"
+  ],
+  "updated": "2026-10-25T17:06:59.424Z"
+}

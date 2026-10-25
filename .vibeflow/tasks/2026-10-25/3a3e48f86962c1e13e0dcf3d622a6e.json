@@ -1,0 +1,28 @@
+{
+  "title": "Count guard scripts in coverage",
+  "description": "scripts/ is 610 lines at 0% because the v8 provider only counts code loaded in the test process, and the guards run as child processes. Decide and implement one option. A (current): accept, assert exit codes only. B: allowJs true in tsconfig and import release.mjs and check-git-identity.mjs in-process (both already have main() guards, so they import safely). C: also refactor check-adrs.mjs to a main() export like its sibling, since it executes and process.exits on import today. B plus C is the recommendation. Needs an ADR if the threshold policy changes.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000003000000",
+  "id": "3a3e48f86962c1e13e0dcf3d622a6e",
+  "created": "2026-10-25T16:14:32.268Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "3a3e48f8-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:13.245Z"
+    }
+  ],
+  "updated": "2026-10-25T17:03:13.245Z"
+}

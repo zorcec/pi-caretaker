@@ -1,0 +1,28 @@
+{
+  "title": "Background triage turn with serialized session",
+  "description": "Submit admitted events as background agent turns into one persistent Pi session, serialized against Telegram input so the two never contend for the turn. Use buildTriageRequest so webhook text stays in the data channel and the instruction channel stays the fixed repo-owned string (ADR-0002), with src/prompts/triage.md as the guidance. Default to silence; only a deliberate notify posts (ADR-0003).",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "links": [
+    {
+      "taskId": "0ce8c29edee87ade5c6ca89f4a3c77",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000019000000",
+  "id": "6e7eaef752c14d5e2ea665c8eba22c",
+  "created": "2026-10-25T16:17:46.218Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "6e7eaef7-implementation-plan.md",
+      "addedAt": "2026-10-25T16:25:24.007Z"
+    }
+  ],
+  "updated": "2026-10-25T16:25:24.007Z"
+}

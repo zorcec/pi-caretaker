@@ -1,0 +1,28 @@
+{
+  "title": "Telegram adapter implementation",
+  "description": "Implement the TelegramAdapter interface from src/telegram/index.ts: notify(text) as the single outbound path and onMessage(handler) as the single inbound path, over exactly one conversation (ADR-0003). Validate Pitgram first for silent shared-session background turns per docs/research/README.md; fall back to the smallest grammY bridge only via a new ADR. A test currently pins the module to zero runtime exports and must flip when this lands.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "links": [
+    {
+      "taskId": "0ce8c29edee87ade5c6ca89f4a3c77",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000018000000",
+  "id": "f8f1f597a672792711c22d7bf9e6f5",
+  "created": "2026-10-25T16:17:45.580Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "f8f1f597-implementation-plan.md",
+      "addedAt": "2026-10-25T16:25:26.591Z"
+    }
+  ],
+  "updated": "2026-10-25T16:25:26.592Z"
+}

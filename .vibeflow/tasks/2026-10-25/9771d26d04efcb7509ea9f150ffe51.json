@@ -1,0 +1,28 @@
+{
+  "title": "Fix ADR guard rule (d) crash",
+  "description": "scripts/check-adrs.mjs:138 spreads pointerFiles.get(id) which is undefined for an accepted decision nothing points at, so the process dies with a TypeError before printing rule (d). Reproduced in a scratch fixture: rule (d) is unreachable exactly when it matters most, and non-accepted ADRs report it fine (inverted). Fix is a guard change: needs a red proof (the crash) and a green test flipping tests/guards/check-adrs.test.ts it.todo into a real assertion.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "High",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000002000000",
+  "id": "9771d26d04efcb7509ea9f150ffe51",
+  "created": "2026-10-25T16:14:31.537Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "9771d26d-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:06.508Z"
+    }
+  ],
+  "updated": "2026-10-25T17:03:06.508Z"
+}

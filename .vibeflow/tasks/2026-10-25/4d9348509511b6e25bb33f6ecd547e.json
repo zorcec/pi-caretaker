@@ -1,0 +1,28 @@
+{
+  "title": "Unblock the release path",
+  "description": "pnpm release always fails: CHANGELOG.md is a single heading and no changeset has ever been consumed, so scripts/release.mjs refuses with no CHANGELOG section for version 0.1.0 (exit 1, proven by tests/guards/release.test.ts). Consume a changeset or write the first 0.1.0 section so the refusal path is no longer the only reachable path. The remaining tag and gh release paths still need tests with a scratch remote and a stub gh on PATH.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "Medium",
+  "links": [
+    {
+      "taskId": "d8f35c7cd6eea8d8dfb9ed5da58759",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000010000000",
+  "id": "4d9348509511b6e25bb33f6ecd547e",
+  "created": "2026-10-25T16:14:37.636Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "4d934850-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:07.132Z"
+    }
+  ],
+  "updated": "2026-10-25T17:03:07.133Z"
+}

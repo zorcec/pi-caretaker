@@ -1,0 +1,25 @@
+{
+  "title": "Initial implementation",
+  "description": "Build the V1 caretaker loop on top of the existing contract scaffold: authenticated listener, in-memory queue with sequential delivery, extension activation, deterministic escape hatch, Telegram adapter, and the vibeflow event source. Each child carries an implementation plan written by the sol model and attached to the ticket. Scope is the V1 include list from docs/concept/pi-caretaker-high-level-concept-v3.md; the binding non-goals (persistence, dedupe, dashboards, collectors, database, automatic infra changes) stay untouched without an ADR.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "Critical",
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000001000000",
+  "id": "0ce8c29edee87ade5c6ca89f4a3c77",
+  "created": "2026-10-25T16:17:28.805Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "master-implementation-plan.md",
+      "addedAt": "2026-10-25T17:03:13.887Z"
+    }
+  ],
+  "expandedBy": [
+    "root"
+  ],
+  "updated": "2026-10-25T17:06:30.709Z"
+}

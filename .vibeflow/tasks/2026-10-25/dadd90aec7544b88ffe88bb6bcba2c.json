@@ -1,0 +1,28 @@
+{
+  "title": "Authenticated HTTP listener",
+  "description": "Implement POST /events and GET /health. Bearer token auth, the 64 KiB body cap from MAX_EVENT_BODY_BYTES, zod envelope validation, and queue admission with honest status codes: 401 unauthorized, 413 oversized, 400 invalid, a real overload status when the queue is full, and 202 only when the event actually entered the in-memory queue. handlePostEvents currently throws not implemented. Pins ADR-0001 and ADR-0002.",
+  "status": "todo",
+  "selector": "/",
+  "author": "Tomislav Zorcec",
+  "priority": "Critical",
+  "links": [
+    {
+      "taskId": "0ce8c29edee87ade5c6ca89f4a3c77",
+      "type": "parent"
+    }
+  ],
+  "openedBy": [
+    "root"
+  ],
+  "sortKey": "0000000014000000",
+  "id": "dadd90aec7544b88ffe88bb6bcba2c",
+  "created": "2026-10-25T16:17:43.126Z",
+  "comments": [],
+  "files": [
+    {
+      "name": "dadd90ae-implementation-plan.md",
+      "addedAt": "2026-10-25T16:25:27.820Z"
+    }
+  ],
+  "updated": "2026-10-25T16:25:27.820Z"
+}
