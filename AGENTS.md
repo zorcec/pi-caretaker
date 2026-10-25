@@ -11,6 +11,9 @@ There is no `.opencode/` directory here. If you know `.opencode/skills/` from th
 vibeflow repos, read `.agents/skills/` instead — same idea, discoverable layout.
 Deliberately **not** `.pi/skills/`: Pi supports it, but a dot-directory is
 invisible in most file browsers and contributors never find the skills.
+Orchestration/brevity behavior (`orchestrate`, `terse`) comes from the
+owner's global `~/.claude/skills/` set — never copied into this repo; the
+repo's own skills are project knowledge for strangers cloning it.
 
 ## The five commands
 

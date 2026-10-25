@@ -1,6 +1,6 @@
 ---
 name: skill-improvement
-description: Fix factual errors in .pi skills immediately, add repeated gaps, never restyle. Load when a skill misleads you during real work.
+description: Fix factual errors in .agents/skills immediately, add repeated gaps, never restyle. Load when a skill misleads you during real work.
 ---
 
 # Skill Improvement
