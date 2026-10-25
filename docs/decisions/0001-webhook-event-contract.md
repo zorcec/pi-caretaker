@@ -13,3 +13,5 @@ its own ADR, not a reinterpretation of 202.
 ## Pins
 - `tests/events.test.ts`
 - `tests/health.test.ts`
+- `tests/queue.test.ts`
+- `tests/e2e/pipeline.e2e.test.ts`
