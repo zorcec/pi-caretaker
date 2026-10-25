@@ -24,6 +24,7 @@ interface BuiltHealth {
 
 interface BuiltIndex {
   extension: { name: string; version: string; activate(): void };
+  getHealth(): { status: string; version: string; commit: string };
 }
 
 let outDir: string;
@@ -88,18 +89,21 @@ describe("built artifact", () => {
     expect(() => entry.extension.activate()).toThrow(/not implemented/);
   });
 
-  it("emits a declaration for the extension contract", () => {
+  it("emits a declaration for the extension contract and the health accessor", () => {
     const dts = readFileSync(join(outDir, "index.d.ts"), "utf8");
     expect(dts).toContain("CaretakerExtension");
     expect(dts).toContain("activate");
+    expect(dts).toContain("getHealth");
+    expect(dts).toContain("HealthReport");
   });
 
-  // src/index.ts never imports src/health.ts, so the health report (and the
-  // commit injection behind it) is absent from the packaged entry: a consumer
-  // cannot reach GET /health from `dist/index.js` at all. The tsup `define`
-  // is therefore unreachable through the public surface — this todo becomes a
-  // real assertion as soon as the HTTP listener ticket wires health in.
-  it.todo(
-    "GET /health is reachable from the packaged entry, carrying the injected commit",
-  );
+  it("GET /health is reachable from the packaged entry, carrying the injected commit", async () => {
+    const entry = (await import(built("index.js"))) as BuiltIndex;
+
+    expect(entry.getHealth()).toEqual({
+      status: "ok",
+      version: "0.1.0",
+      commit: shortHead(),
+    });
+  });
 });

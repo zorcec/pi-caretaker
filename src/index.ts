@@ -7,10 +7,27 @@
  * one construction surface; activation itself still throws until its
  * wiring/environment ticket lands.
  */
+import {
+  getHealth as buildHealth,
+  type HealthReport,
+} from "./health.js";
+
 export {
   createWebhookListener,
   type WebhookListenerOptions,
 } from "./listener.js";
+export type { HealthReport };
+
+/**
+ * Entry-owned health accessor (ADR-0001): the packaged entry reports the
+ * built package's version with the build-injected commit, so consumers of
+ * dist/index.js reach the same report the future GET /health route serves.
+ * Zero-argument by design — the entry supplies its own version; this is the
+ * proposed shape pending owner confirmation on ticket 4ef82184.
+ */
+export function getHealth(): HealthReport {
+  return buildHealth(extension.version);
+}
 export interface CaretakerExtension {
   name: string;
   version: string;
