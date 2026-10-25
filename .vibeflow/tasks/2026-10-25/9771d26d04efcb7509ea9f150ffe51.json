@@ -24,5 +24,12 @@
       "addedAt": "2026-10-25T17:03:06.508Z"
     }
   ],
-  "updated": "2026-10-25T17:03:06.508Z"
+  "updated": "2026-10-25T17:15:41.067Z",
+  "commits": [
+    {
+      "sha": "eb1357a0df24df41f7718bbf02539ac34fd060c6",
+      "message": "fix(guards): report ADR rule (d) instead of crashing on an unreferenced decision",
+      "timestamp": "2026-10-25T17:15:41.066Z"
+    }
+  ]
 }
