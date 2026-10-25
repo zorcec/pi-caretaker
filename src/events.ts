@@ -6,7 +6,9 @@
  * attention. Webhook text is untrusted DATA: it travels in the data channel
  * of a triage request and must never become agent instructions (ADR-0002).
  */
+import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import type { EventQueue } from "./queue.js";
 
 // Body-size cap. V1 decision: 64 KiB. Webhook envelopes are small JSON
 // summaries, not log dumps; oversized bodies are rejected outright (413),
@@ -59,15 +61,74 @@ export interface PostEventsRequest {
   rawBody: string | Uint8Array;
 }
 
-export interface PostEventsResult {
-  status: 202;
-  queued: true;
+export type PostEventsResult =
+  | { status: 202; queued: true }
+  | { status: 400; error: string }
+  | { status: 401; error: string }
+  | { status: 413; error: string }
+  | { status: 503; error: string };
+
+/** Extract the bearer token, or undefined when the header is absent/malformed. */
+function presentedBearerToken(
+  headers: PostEventsRequest["headers"],
+): string | undefined {
+  const value = headers.authorization;
+  if (typeof value !== "string") return undefined;
+  const prefix = "Bearer ";
+  if (!value.startsWith(prefix)) return undefined;
+  const token = value.slice(prefix.length);
+  return token.length > 0 ? token : undefined;
 }
 
-// TODO(pi-caretaker-1): implement the authenticated listener, validation, and
-// queue admission in the HTTP-listener ticket. Stub only in this lane.
-export function handlePostEvents(_req: PostEventsRequest): PostEventsResult {
-  throw new Error(
-    "not implemented: POST /events handler (TODO(pi-caretaker-1): HTTP listener ticket)",
-  );
+/** Constant-time comparison; length mismatch is a plain false, not a throw. */
+function tokensEqual(presented: string, expected: string): boolean {
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Admission for POST /events (ADR-0001, ADR-0002).
+ *
+ * Checks run in contract order: bearer token first (a 401 never parses or
+ * queues anything), then the byte cap, then JSON/schema validation, then
+ * exactly one enqueue. Only an accepted enqueue returns 202. Error bodies
+ * stay generic human-readable strings — statuses are the contract, and no
+ * token or payload text ever appears in an error.
+ */
+export function handlePostEvents(
+  req: PostEventsRequest,
+  expectedToken: string,
+  queue: EventQueue<EventEnvelope>,
+): PostEventsResult {
+  const presented = presentedBearerToken(req.headers);
+  if (presented === undefined || !tokensEqual(presented, expectedToken)) {
+    return { status: 401, error: "missing or invalid bearer token" };
+  }
+  const byteLength =
+    typeof req.rawBody === "string"
+      ? Buffer.byteLength(req.rawBody)
+      : req.rawBody.byteLength;
+  if (byteLength > MAX_EVENT_BODY_BYTES) {
+    return { status: 413, error: "request body exceeds the 64 KiB limit" };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      typeof req.rawBody === "string"
+        ? req.rawBody
+        : Buffer.from(req.rawBody).toString("utf8"),
+    );
+  } catch {
+    return { status: 400, error: "malformed JSON body" };
+  }
+  const envelope = eventEnvelopeSchema.safeParse(parsed);
+  if (!envelope.success) {
+    return { status: 400, error: "invalid event envelope" };
+  }
+  const admitted = queue.enqueue(envelope.data);
+  if (!admitted.accepted) {
+    return { status: 503, error: "event queue is full; retry later" };
+  }
+  return { status: 202, queued: true };
 }

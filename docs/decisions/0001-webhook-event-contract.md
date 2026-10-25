@@ -15,3 +15,4 @@ its own ADR, not a reinterpretation of 202.
 - `tests/health.test.ts`
 - `tests/queue.test.ts`
 - `tests/e2e/pipeline.e2e.test.ts`
+- `tests/e2e/webhook.e2e.test.ts`

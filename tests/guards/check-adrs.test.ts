@@ -24,7 +24,7 @@ import {
 const GUARD = "scripts/check-adrs.mjs";
 const DECISION_FILE = "0005-fixture-decision.md";
 const GOVERNED_FILE = "src/fixture-decision.ts";
-const VALID_PIN = "tests/scaffold.test.ts";
+const VALID_PIN = "tests/health.test.ts";
 
 /** Runtime-only decision id, so this file never carries a literal pointer. */
 function adrId(n: number): string {

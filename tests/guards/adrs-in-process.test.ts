@@ -81,14 +81,14 @@ describe("ADR guard in process (runCheck)", () => {
         "## Consequence",
         "z",
         "## Pins",
-        "- `tests/scaffold.test.ts`",
+        "- `tests/health.test.ts`",
         "",
       ].join("\n"),
     );
     const index = f.read("docs/decisions/index.md").trimEnd();
     f.write(
       "docs/decisions/index.md",
-      `${index}\n| [${ORPHAN_NUM}](${file}) | fixture | 2026-10-25 | n | \`tests/scaffold.test.ts\` |\n`,
+      `${index}\n| [${ORPHAN_NUM}](${file}) | fixture | 2026-10-25 | n | \`tests/health.test.ts\` |\n`,
     );
 
     const result = runCheck(f.root);
