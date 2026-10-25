@@ -126,3 +126,15 @@ release, not just etiquette.
   the ADR states the rule, the pins, and nothing else.
 - Do not merge external PRs on green-looking checks alone — there is no
   remote CI yet, and local hooks do not run on someone else's fork.
+
+## Execution invariants (learned 2026-10-25 on vibeflow)
+
+- **One deliverable per lane brief.** A brief with six deliverables burned
+  two 30-minute timeouts in a row; >20 min means two lanes.
+- **Commit in stages.** A committed partial with an honest "not finished"
+  beats an uncommitted finished change that a timeout deletes.
+- **The doer writes the evidence and moves its own ticket** to review with
+  the commands it ran — splitting do/verify piles tickets in `review`.
+- **An unknown response shape is an error, never "pending"** (or any other
+  optimistic default). A four-shape device-poll contract where the CLI
+  handled three turned an authorization success into a false "expired".
