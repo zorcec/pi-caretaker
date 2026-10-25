@@ -1,7 +1,7 @@
 {
   "title": "Count guard scripts in coverage",
   "description": "scripts/ is 610 lines at 0% because the v8 provider only counts code loaded in the test process, and the guards run as child processes. Decide and implement one option. A (current): accept, assert exit codes only. B: allowJs true in tsconfig and import release.mjs and check-git-identity.mjs in-process (both already have main() guards, so they import safely). C: also refactor check-adrs.mjs to a main() export like its sibling, since it executes and process.exits on import today. B plus C is the recommendation. Needs an ADR if the threshold policy changes.",
-  "status": "todo",
+  "status": "done",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -17,14 +17,27 @@
   "sortKey": "0000000003000000",
   "id": "3a3e48f86962c1e13e0dcf3d622a6e",
   "created": "2026-10-25T16:14:32.268Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "gdny5womvxocfibupc3gvo8k",
+      "text": "**What changed.** Guards are now counted in coverage, not just exercised. `check-adrs.mjs` was refactored into an importable `runCheck(root)` returning `{ok, adrCount, problems}` plus a thin `main()` owning output and the exit code — the same boundary `check-git-identity.mjs` already had. `allowJs: true` in tsconfig plus adjacent `.d.mts` declarations let the suite import all three guards with types. New in-process suites: `adrs-in-process` (4), `identity-in-process` (9), `release-in-process` (6). `scripts/**/*.mjs` thresholds pinned at 47/41/76/47, just under the measured 47.63/41.66/76.92/47.63, so any regression fails the build.\n\n**Red to green proof.** The first in-process test killed its own worker: importing the guard executed the checks at import time and called `process.exit(1)` — suite failed with \"process.exit unexpectedly called\". After the refactor the same file is 4/4 green. The CLI contract is unchanged: byte-identical stdout and exit 0 on the real repo, and all 12 child-process ADR cases still pass, so neither layer is redundant with the other.\n\n**Trap avoided.** The first draft of the new test file carried literal decision ids, and the real-repo guard failed with rule (a) dangling references to the test file itself. Ids are now assembled at runtime via `orphanId()` — the same reason `check-adrs.test.ts` uses `adrId()`.\n\n**Verification.** pnpm check green: typecheck + lint + 84 tests passing, 21 todo across 17 files (65 to 84). Coverage green with the new scripts thresholds: check-adrs 84.18%, identity 23.11%, release 35.23%.\n\n**Coverage still to grow.** identity and release in-process suites pin only the pure predicates so far; the CLI paths (`main()`, collectCommits, pushCommits) remain child-process-only. Deliberate: this ticket was \"count the guards\", and the thresholds ratchet upward from here.\n\nNo changeset: guard and test tooling only, no user-visible contract change.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:29:08.535Z"
+    },
+    {
+      "id": "ij31q7ekt2qazv5r4909d1dg",
+      "text": "Owner verified in session 2026-10-25: re-ran the full gate green (85 passing), coverage thresholds holding, release path open, no .github present. Closing per explicit owner permission.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:37:31.969Z"
+    }
+  ],
   "files": [
     {
       "name": "3a3e48f8-implementation-plan.md",
       "addedAt": "2026-10-25T17:03:13.245Z"
     }
   ],
-  "updated": "2026-10-25T17:28:52.245Z",
+  "updated": "2026-10-25T17:53:38.553Z",
   "commits": [
     {
       "sha": "86f9679fa12f7298bf8450b57e47a359f0c822e7",

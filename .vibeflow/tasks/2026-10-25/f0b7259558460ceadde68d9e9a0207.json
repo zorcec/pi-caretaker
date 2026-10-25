@@ -1,7 +1,7 @@
 {
   "title": "Answer the CI gating question",
   "description": "AGENTS.md open question: this will be a public repo, and there is no CI, so a push is only as safe as local hooks, which do not run on a stranger's fork. Today the whole 63 test suite plus both guards exist only on this machine. Decide between remote CI, required reviews, or both, then record the answer in AGENTS.md. Until then do not merge external PRs on green looking checks alone.",
-  "status": "todo",
+  "status": "done",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -17,14 +17,27 @@
   "sortKey": "0000000012000000",
   "id": "f0b7259558460ceadde68d9e9a0207",
   "created": "2026-10-25T16:14:39.113Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "pjibbpyyagro2d4voux7ajse",
+      "text": "**What changed.** Owner decision: no remote CI, ever. I had created `.github/workflows/check.yml` plus a pinning test; both are deleted. The decision is recorded in two places: `AGENTS.md` (\"External PRs (decided 2026-10-25: no remote CI, ever)\" — no workflows, no Actions, no other runner without the owner's explicit word; external PRs need human review) and the `implementation-workflow` skill's gates section (\"No remote CI, ever ... If you are about to create a workflow file, stop: that decision belongs to the owner, not to a ticket\").\n\n**Why the skill, not an ADR.** This constrains agent process, not product code — the skill is the instruction layer agents read before acting, and the skill-improvement rule says to add a repeated gap briefly where the work happens. No ADR: no code behavior is governed.\n\n**Verification.** `pnpm check` green: typecheck + lint + 84 tests passing, 21 todo across 17 files. No `.github` directory, no `ci-gate` test file. The standing rule \"do not merge external PRs on green-looking checks alone\" is unchanged — it now stands on human review instead of a workflow that will never exist.\n\nNo changeset: docs-only, no user-visible contract change.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:31:39.736Z"
+    },
+    {
+      "id": "moz6rc4hz9rqw1e9ldd1ukfp",
+      "text": "Owner verified in session 2026-10-25: re-ran the full gate green (85 passing), coverage thresholds holding, release path open, no .github present. Closing per explicit owner permission.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:37:33.375Z"
+    }
+  ],
   "files": [
     {
       "name": "f0b72595-implementation-plan.md",
       "addedAt": "2026-10-25T17:03:10.764Z"
     }
   ],
-  "updated": "2026-10-25T17:31:24.694Z",
+  "updated": "2026-10-25T17:53:38.554Z",
   "commits": [
     {
       "sha": "8c39d520cd70ab71737ccde4399375afa4223d91",

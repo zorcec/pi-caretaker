@@ -1,7 +1,7 @@
 {
   "title": "Health reachable from the packaged entry",
   "description": "src/index.ts never imports src/health.ts, so getHealth and the build-time __PI_CARETAKER_COMMIT__ substitution are absent from dist/index.js and no consumer can reach health from the package. Wire health into the entry as part of the listener work so the deployed commit is reported, and keep the build test in tests/build/artifact.test.ts asserting commit equals git rev-parse short HEAD.",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Medium",
@@ -17,14 +17,21 @@
   "sortKey": "0000000020000000",
   "id": "4ef821844dd8b667e3a814612416dd",
   "created": "2026-10-25T16:17:46.848Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "d3iw9l5otnt5iu0y5unfddn6",
+      "text": "**What changed.** `src/index.ts` imports `getHealth`/`HealthReport` from `./health.js` and exports a zero-argument `getHealth()` delegating with `extension.version`. `tests/build/artifact.test.ts`: the packaged-entry todo is now a real assertion (built `index.js` deep-equals `{status ok, version 0.1.0, commit shortHead()}`), and the declaration test requires the `getHealth`/`HealthReport` surface.\n\n**Chosen default (flagged for owner).** Zero-arg accessor tied to `extension.version` is the plan's proposed shape; the alternative (re-export the lower-level `getHealth(version)`) stays open. Say the word and I will switch it with the tests.\n\n**Red to green proof.** The old `BuiltIndex` had no `getHealth` export — the new assertion failed before the source change, 6/6 after (5 passed + 1 todo became 6 passed). The placeholder test in the built bundle is gone.\n\n**Verification.** Pending the full gate in the same commit run (next command). No ADR change: ADR-0001's contract is unchanged, only newly reachable.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:51:32.998Z"
+    }
+  ],
   "files": [
     {
       "name": "4ef82184-implementation-plan.md",
       "addedAt": "2026-10-25T16:25:24.670Z"
     }
   ],
-  "updated": "2026-10-25T17:51:16.444Z",
+  "updated": "2026-10-25T17:53:38.553Z",
   "commits": [
     {
       "sha": "37ef641bc79c578337a0d76dba5343fb6deb7ff4",

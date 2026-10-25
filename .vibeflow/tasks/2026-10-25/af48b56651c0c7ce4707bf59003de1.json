@@ -25,12 +25,19 @@
   "sortKey": "0000000006000000",
   "id": "af48b56651c0c7ce4707bf59003de1",
   "created": "2026-10-25T16:14:34.587Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "mds66upay7wc83bwoysjvvyo",
+      "text": "Partial progress 2026-10-25 (queue ticket 6a8e1458): the sequential-delivery, capacity-overflow and restart-loss todos are now real tests against the production queue and green. Remaining todos (escape hatch, hostile-text channel, silence observable, Telegram reply) need the background seam from ticket 6e7eaef7, which is blocked on the Pi API owner decision.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:51:47.386Z"
+    }
+  ],
   "files": [
     {
       "name": "af48b566-implementation-plan.md",
       "addedAt": "2026-10-25T17:03:09.549Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.978Z"
+  "updated": "2026-10-25T17:53:38.554Z"
 }

@@ -1,7 +1,7 @@
 {
   "title": "Set up vitest projects, test kit and coverage gate",
   "description": "The test foundation this tree builds on, already implemented: vitest.config.ts defines four projects (unit/guards/build/e2e) run by one vitest run, vitest.live.config.ts isolates the network tier so pnpm test can never reach it, package.json gained test:watch/test:unit/test:e2e/test:live, tsconfig includes the live config, tests/setup/ holds the repo fixture and recording doubles, tests/guards/ covers all three guard scripts plus the husky hooks, tests/build/artifact.test.ts runs tsup into a temp dir and imports the artifact, tests/testkit.test.ts pins the doubles, and tests/scaffold.test.ts pins the current not-implemented stubs. Coverage is v8 with thresholds keyed to src/** (statements 95, functions 100, branches 85, lines 95), proven able to fail at 99. Result: 63 passing + 22 todo in 14 files, src at 97.91% statements.",
-  "status": "review",
+  "status": "done",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Critical",
@@ -24,10 +24,16 @@
       "text": "**What changed.** vitest.config.ts now defines four projects (unit, guards, build, e2e) run by a single vitest run; vitest.live.config.ts isolates the network tier so pnpm test can never reach it; package.json gained test:watch / test:unit / test:e2e / test:live; tsconfig includes the live config. tests/setup/ holds repo-fixture (scratch git repo + guard run harness) and doubles (recording Telegram, stub triage); tests/guards/ runs all three guard scripts plus both husky hooks as real child processes; tests/build/artifact.test.ts runs tsup into a temp dir and imports the artifact; tests/testkit.test.ts pins the doubles; tests/scaffold.test.ts pins the current not-implemented stubs and must be deleted when its ticket lands.\n\n**Verification.** pnpm check green: typecheck + lint + 63 tests passing, 22 todo across 14 files, 2.4s. src coverage 97.91% statements / 88.88% branch / 100% functions. The coverage gate was proven able to fail, not decoration: raising the src/**/*.ts threshold to 99 produced ERROR Coverage for statements (97.91%) does not meet src/**/*.ts threshold (99%) and exit 1. Guard e2e covers ADR rules (a),(b),(c),(e) plus the identity and release refusals; rule (d) is an it.todo because that guard crashes today (ticket 9771d26d).\n\n**Decisions.** scripts/*.mjs stays out of the threshold keying (child-process runs are not attributed by the v8 provider) - policy decision filed as ticket 3a3e48f8. No changeset: test infrastructure only, no user-visible contract change.",
       "createdAt": "2026-10-25T17:06:44.885Z",
       "source": "cli"
+    },
+    {
+      "id": "toc3rlhskxr0eylf0p4azgda",
+      "text": "Owner verified in session 2026-10-25: re-ran the full gate green (85 passing), coverage thresholds holding, release path open, no .github present. Closing per explicit owner permission.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:37:29.230Z"
     }
   ],
   "files": [],
-  "updated": "2026-10-25T17:06:45.008Z",
+  "updated": "2026-10-25T17:53:38.554Z",
   "commits": [
     {
       "sha": "6b14f16a080aa60baeb5c98107fabc21c6f0d82c",

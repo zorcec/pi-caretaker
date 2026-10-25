@@ -1,7 +1,7 @@
 {
   "title": "Deterministic escape hatch bypass",
   "description": "Implement ADR-0004 as code: an owner-reviewed must-never-miss list (host gone dark, backups dead) checked before triage and notified unconditionally, without the model deciding anything. Today the only enforcement point is a regex over src/prompts/triage.md, which pins prose rather than behavior. The list stays short and its contents are an owner decision.",
-  "status": "backlog",
+  "status": "todo",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Critical",
@@ -17,14 +17,27 @@
   "sortKey": "0000000017000000",
   "id": "baac47cd1a877ee387ad6edeb7e9f1",
   "created": "2026-10-25T16:17:44.969Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "hlnwsj4fivfap8vrvlh7vopm",
+      "text": "**What changed.** `src/escape-hatch.ts`: `matchEscapeHatch` (first-match-wins over a rule list), `formatEscapeHatchNotification` (deterministic text that never quotes the untrusted message/metadata/payload), `routeEscapeHatch` (match: exactly one `notify`, continuation never called; non-match: continuation exactly once, zero notifies; notify rejection propagates with no fallthrough). 7 mechanism tests in `tests/escape-hatch.test.ts` using fixture rules; the ADR-0004 pin stays on this file, now behavioral instead of a prose grep.\n\n**What I did NOT do, and why.** The wire vocabulary (which field values mean host-dark/backups-dead) and the notification field subset are owner decisions — I implemented the mechanism with rules as data and shipped `MUST_NOTIFY_RULES` empty. Empty fails safe: everything flows to normal triage, nothing is misclassified, no silent notification path exists. When you answer the vocabulary question, filling the list is a small change with the tests already in place. The pipeline-level case stays an it.todo until the background seam (ticket 6e7eaef7) lands; per plan step 5 I created no competing pipeline.\n\n**Red to green proof.** Tests written first against the missing module (import failure = red). After implementation 7/7 green. The exclusion test feeds a hostile message plus fake secrets and asserts none of it appears in the notification.\n\n**Verification.** pnpm check green: 110 tests passing (105 to 110), 18 todo. ADR gate clean — the new file carries the ADR-0004 pointer, same-day commit, no drift. No ADR change: ADR-0004 already binds the behavior; the vocabulary answer will re-affirm it when it lands.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:45:26.388Z"
+    },
+    {
+      "id": "w123945i6f9nvynro8mvjrt2",
+      "text": "Moved out of review: not delivered. ADR-0004 is written and pinned, but the deterministic escape hatch itself is not built — review implied it was awaiting sign-off on a finished change.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:46:31.030Z"
+    }
+  ],
   "files": [
     {
       "name": "baac47cd-implementation-plan.md",
       "addedAt": "2026-10-25T16:25:28.466Z"
     }
   ],
-  "updated": "2026-10-25T17:45:09.396Z",
+  "updated": "2026-10-25T17:53:38.554Z",
   "commits": [
     {
       "sha": "26210e9ed0312f37e2301264405bfe1dae1ce2c5",

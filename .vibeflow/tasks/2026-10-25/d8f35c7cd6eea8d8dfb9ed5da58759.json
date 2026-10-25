@@ -1,7 +1,7 @@
 {
   "title": "Initial testing",
   "description": "Test framework setup (vitest projects: unit/guards/build/e2e + separate live config), 63 passing tests and a src coverage gate at 97.91%. Children cover the gaps found while setting it up: guard bugs, uncounted coverage, pending e2e tiers, and the decisions that block them.",
-  "status": "in-progress",
+  "status": "todo",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -18,6 +18,12 @@
       "text": "Root claimed: the test foundation is implemented and in review under child cbb01c18 (vitest projects, test kit, coverage gate, 63 passing / 22 todo, src 97.91%). This root stays in-progress until its 11 children land.",
       "createdAt": "2026-10-25T17:06:59.426Z",
       "source": "cli"
+    },
+    {
+      "id": "yozpqepao02lpra6tynnu225",
+      "text": "Moved out of in-progress: no test work is in flight beyond the 5 contract suites that already exist and pass (18 tests).",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:46:29.742Z"
     }
   ],
   "files": [
@@ -29,5 +35,5 @@
   "expandedBy": [
     "root"
   ],
-  "updated": "2026-10-25T17:06:59.424Z"
+  "updated": "2026-10-25T17:53:38.554Z"
 }

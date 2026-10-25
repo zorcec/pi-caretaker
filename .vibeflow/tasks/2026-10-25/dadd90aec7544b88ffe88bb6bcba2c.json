@@ -1,7 +1,7 @@
 {
   "title": "Authenticated HTTP listener",
   "description": "Implement POST /events and GET /health. Bearer token auth, the 64 KiB body cap from MAX_EVENT_BODY_BYTES, zod envelope validation, and queue admission with honest status codes: 401 unauthorized, 413 oversized, 400 invalid, a real overload status when the queue is full, and 202 only when the event actually entered the in-memory queue. handlePostEvents currently throws not implemented. Pins ADR-0001 and ADR-0002.",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Critical",
@@ -17,14 +17,27 @@
   "sortKey": "0000000014000000",
   "id": "dadd90aec7544b88ffe88bb6bcba2c",
   "created": "2026-10-25T16:17:43.126Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "dfad52ni8ft6dv1pxv6qfjbv",
+      "text": "Moved out of in-progress: nothing is being built. The repo has contract stubs only — src/index.ts activate() throws 'not implemented' on purpose — so an in-progress here claimed work that does not exist.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:46:28.475Z"
+    },
+    {
+      "id": "cr4eqmll6zewzakn5u43cr7k",
+      "text": "**What changed.** `src/events.ts`: `PostEventsResult` is now a 202/400/401/413/503 discriminated union; `handlePostEvents(request, expectedToken, queue)` checks bearer token first (constant-time compare, 401 before any parsing), then the byte cap, then JSON/schema, then exactly one enqueue — 202 only on accepted admission. `src/listener.ts` (new): `createWebhookListener({token, version, queue})` on plain node:http, exact `GET /health` shape (only the three contract keys), declared + observed 64 KiB cap with socket drain, 405 with `Allow`, 404 otherwise, generic `{error}` bodies (statuses are the contract). `src/index.ts` re-exports the factory; `activate()` still throws. All 9 webhook e2e todos are real socket tests; `tests/scaffold.test.ts` deleted (its TRIAGE pin was already covered by `untrusted-payload.test.ts` byte-equality).\n\n**Chosen defaults (flagged for owner — all reversible, bodies stay generic per plan).** Error bodies are `{error: string}` with no stable codes; Content-Type is not enforced; blank token throws at construction; routing checked before auth. If you want stable error codes, Content-Type enforcement, or a different factory shape, say so.\n\n**Red to green proof.** Tests written against the throwing stub: the file failed before implementation. Two real bugs caught during the work, both fixed: (1) my test helper's default parameter made the \"missing token\" case send a valid token — restructured to explicit `undefined`-omits; (2) my overflow test assumed retained counting while the pump was running — refactored to fill-before-delivery. A third find: the deleted `scaffold.test.ts` was the default pin in guard fixtures, breaking two guard tests — repointed to `tests/health.test.ts`. Plus a suite-speed fix: `closeAllConnections()` in teardown, 3.2s to 215ms.\n\n**Verification.** pnpm check green: 116 tests passing (105 to 116), 9 todo. pnpm build green. ADR gate clean; ADR-0001 pins + index extended in the same commit.\n\nNo new ADR: ADR-0001/0002 already bind this; error-body schema stays generic until you decide otherwise.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:50:23.839Z"
+    }
+  ],
   "files": [
     {
       "name": "dadd90ae-implementation-plan.md",
       "addedAt": "2026-10-25T16:25:27.820Z"
     }
   ],
-  "updated": "2026-10-25T17:50:06.859Z",
+  "updated": "2026-10-25T17:53:38.554Z",
   "commits": [
     {
       "sha": "bd3e00c1bb0499f50a01152d49b8322fec4aa424",

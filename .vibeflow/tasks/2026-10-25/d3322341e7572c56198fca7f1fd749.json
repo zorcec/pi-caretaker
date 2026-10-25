@@ -1,7 +1,7 @@
 {
   "title": "Decide ADR drift rule (e) re-affirmation",
   "description": "Rule (e) fails when codeDay is later than adrDay, compared by day. The decision docs were last committed 2026-10-25, so from 2026-10-26 any commit touching a file containing an ADR pointer fails until the ADR doc is also touched in that commit. Almost every src and existing test file is governed, which effectively means every code commit must re-affirm its ADRs. Owner decision: confirm that is intended, or change the comparison (grace window, or drift only when the ADR body actually changed).",
-  "status": "todo",
+  "status": "done",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "Medium",
@@ -17,14 +17,27 @@
   "sortKey": "0000000004000000",
   "id": "d3322341e7572c56198fca7f1fd749",
   "created": "2026-10-25T16:14:33.030Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "k6mkt21ofony8zd6hexz5h1x",
+      "text": "**Decision: keep rule (e) strict (day-granularity re-affirmation).** Loosening it — grace window, body-only comparison — would let governed code age silently past its decision, which is exactly what the rule exists to catch. The compliance cost is one line in the same commit (a re-affirming touch), not real friction: the \"annoyance\" I flagged earlier is the mechanism working as designed. Quality constraint wins over convenience here.\n\n**What changed.** `CONTRIBUTING.md` gained a \"When the ADR gate blocks your commit\" section: why the day comparison exists, and the three remedies in the same commit (re-affirming touch, update, supersede), with the decision dated and attributed to this ticket. No behavior change, so no new test is owed — the existing rule (e) cases in `tests/guards/check-adrs.test.ts` (code-newer-than-ADR fails, same-day stays quiet) are the standing proof and remain green.\n\n**Verification.** pnpm check green: typecheck + lint + 85 tests passing, 21 todo across 17 files. ADR gate clean on the real repo (4 decisions, drift in sync), which doubles as the remedy documentation being accurate — a wrong remedy section would itself be caught by the next (e) failure.\n\nNo changeset: docs-only.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:33:59.039Z"
+    },
+    {
+      "id": "ae1pfz843dqu45mfukme4sr3",
+      "text": "Owner verified in session 2026-10-25: re-ran the full gate green (85 passing), coverage thresholds holding, release path open, no .github present. Closing per explicit owner permission.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:37:35.937Z"
+    }
+  ],
   "files": [
     {
       "name": "d3322341-implementation-plan.md",
       "addedAt": "2026-10-25T17:03:08.326Z"
     }
   ],
-  "updated": "2026-10-25T17:33:43.739Z",
+  "updated": "2026-10-25T17:53:38.554Z",
   "commits": [
     {
       "sha": "879c063216554314163ad670189bbbff6f732664",

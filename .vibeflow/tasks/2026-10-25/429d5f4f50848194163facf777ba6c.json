@@ -21,12 +21,19 @@
   "sortKey": "0000000008000000",
   "id": "429d5f4f50848194163facf777ba6c",
   "created": "2026-10-25T16:14:36.234Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "je71i2sjbb6n3bmcekrgg2ah",
+      "text": "Partial progress 2026-10-25 (escape-hatch ticket baac47cd): the mechanism is implemented and pinned behaviorally in tests/escape-hatch.test.ts (7 tests, green). The pipeline-level case (real queue + real seam, model stubbed to ignore, exactly one notify) stays pending the background seam from ticket 6e7eaef7.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:51:48.698Z"
+    }
+  ],
   "files": [
     {
       "name": "429d5f4f-implementation-plan.md",
       "addedAt": "2026-10-25T17:03:10.163Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.977Z"
+  "updated": "2026-10-25T17:53:38.553Z"
 }

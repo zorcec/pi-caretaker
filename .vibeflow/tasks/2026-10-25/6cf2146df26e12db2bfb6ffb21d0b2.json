@@ -1,7 +1,7 @@
 {
   "title": "Webhook listener e2e suite",
   "description": "Blocked by TODO(pi-caretaker-1): authenticated listener, validation and queue admission. handlePostEvents and extension.activate both throw not implemented, so there is no server to boot. tests/e2e/webhook.e2e.test.ts holds 9 it.todo cases over a real socket: health shape, 401, 413 at the 64 KiB cap, 400 for bad JSON and unknown severity, real overload status instead of a fake 202, 405/404, plus the invariant that no malformed request ever gets 202. Write them as real tests in that change and delete tests/scaffold.test.ts, whose stub assertions go red on purpose when the stub lands.",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -21,12 +21,19 @@
   "sortKey": "0000000005000000",
   "id": "6cf2146df26e12db2bfb6ffb21d0b2",
   "created": "2026-10-25T16:14:33.790Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "pu4o5lx5wakp7jwk6djbktt9",
+      "text": "Covered by implementation ticket dadd90ae in the same session: all 9 it.todos in tests/e2e/webhook.e2e.test.ts are real socket tests (health shape, auth 401 incl. auth-before-parse, 64 KiB cap boundary both sides, invalid input 400s, 202 admission observable in the real queue, 503 on full, 405+Allow/404 routing, no-202 invariant table), 10/10 green in 215ms. Verified in the same pnpm check runs.",
+      "author": "agent",
+      "createdAt": "2026-10-25T17:53:23.500Z"
+    }
+  ],
   "files": [
     {
       "name": "6cf2146d-implementation-plan.md",
       "addedAt": "2026-10-25T17:03:11.976Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.978Z"
+  "updated": "2026-10-25T17:53:38.553Z"
 }
