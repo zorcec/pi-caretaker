@@ -23,8 +23,13 @@ interface BuiltHealth {
 }
 
 interface BuiltIndex {
-  extension: { name: string; version: string; activate(): void };
+  default: (pi: unknown) => {
+    attachTelegram(transport: unknown): void;
+    getSession(): unknown;
+    shutdown(): Promise<void>;
+  };
   getHealth(): { status: string; version: string; commit: string };
+  EXTENSION_VERSION: string;
 }
 
 let outDir: string;
@@ -81,18 +86,26 @@ describe("built artifact", () => {
     expect(source).not.toContain("__PI_CARETAKER_COMMIT__");
   });
 
-  it("exposes the extension surface from the packaged entry", async () => {
+  it("exposes the Pi extension factory as the packaged default export", async () => {
     const entry = (await import(built("index.js"))) as BuiltIndex;
 
-    expect(entry.extension.name).toBe("pi-caretaker");
-    expect(entry.extension.version).toBe("0.1.0");
-    expect(() => entry.extension.activate()).toThrow(/not implemented/);
+    expect(typeof entry.default).toBe("function");
+    expect(entry.EXTENSION_VERSION).toBe("0.1.0");
+    const controls = entry.default({
+      on: () => () => undefined,
+      sendUserMessage: () => undefined,
+      registerTool: () => undefined,
+      registerCommand: () => undefined,
+    });
+    expect(typeof controls.attachTelegram).toBe("function");
+    expect(typeof controls.shutdown).toBe("function");
+    await controls.shutdown();
   });
 
-  it("emits a declaration for the extension contract and the health accessor", () => {
+  it("emits a declaration for the factory, health accessor, and version", () => {
     const dts = readFileSync(join(outDir, "index.d.ts"), "utf8");
-    expect(dts).toContain("CaretakerExtension");
-    expect(dts).toContain("activate");
+    expect(dts).toContain("default");
+    expect(dts).toContain("EXTENSION_VERSION");
     expect(dts).toContain("getHealth");
     expect(dts).toContain("HealthReport");
   });

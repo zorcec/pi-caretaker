@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { request as httpRequest } from "node:http";
 import { createEventQueue } from "../../src/queue.js";
 import { createWebhookListener } from "../../src/listener.js";
 import {
@@ -46,6 +47,12 @@ async function listen(capacity = 16): Promise<RunningServer> {
   const queue = createEventQueue<EventEnvelope>({
     capacity: capacity as number,
   });
+  return listenOn(queue);
+}
+
+async function listenOn(
+  queue: ReturnType<typeof createEventQueue<EventEnvelope>>,
+): Promise<RunningServer> {
   server = createWebhookListener({
     token: TOKEN,
     version: "9.9.9-test",
@@ -97,6 +104,56 @@ async function postEvents(
 }
 
 describe("webhook listener (POST /events, GET /health)", () => {
+  it("refuses to construct with a blank token — no open listener by misconfiguration", () => {
+    const queue = createEventQueue<EventEnvelope>({ capacity: 1 });
+
+    expect(() =>
+      createWebhookListener({ token: "", version: "x", queue }),
+    ).toThrow(/non-empty bearer token/);
+  });
+
+  it("rejects a chunked body that exceeds the cap mid-stream with 413", async () => {
+    const running = await listen(16);
+    const oversized = `{"message":"${"z".repeat(MAX_EVENT_BODY_BYTES)}"}`;
+
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        `${running.baseUrl}/events`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${TOKEN}`,
+            "transfer-encoding": "chunked",
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on("error", reject);
+      // Stream in small pieces with no content-length: the server must stop
+      // reading once the observed total passes the cap.
+      const chunk = oversized.slice(0, 1024);
+      let sent = 0;
+      const timer = setInterval(() => {
+        sent += chunk.length;
+        if (sent >= oversized.length) {
+          clearInterval(timer);
+          req.end(oversized.slice(sent - chunk.length));
+          return;
+        }
+        if (!req.write(chunk)) {
+          clearInterval(timer);
+          req.end();
+        }
+      }, 1);
+    });
+
+    expect(status).toBe(413);
+    expect(running.queueSize()).toBe(0);
+  });
+
   it("GET /health answers exactly {status, version, commit}", async () => {
     const { baseUrl } = await listen();
 
@@ -216,6 +273,26 @@ describe("webhook listener (POST /events, GET /health)", () => {
       error: expect.any(String),
     });
     expect(running.queueSize()).toBe(1);
+  });
+
+  it("answers 500 without crashing when the queue itself throws", async () => {
+    const queue = createEventQueue<EventEnvelope>({ capacity: 16 });
+    queue.enqueue = () => {
+      throw new Error("storage gone");
+    };
+    const running = await listenOn(queue);
+
+    const { status, json } = await postEvents(
+      running.baseUrl,
+      JSON.stringify({ message: "x" }),
+      `Bearer ${TOKEN}`,
+    );
+
+    expect(status).toBe(500);
+    expect(json).toEqual({ error: "internal error" });
+    // The server survives a throwing dependency: health still answers.
+    const health = await fetch(`${running.baseUrl}/health`);
+    expect(health.status).toBe(200);
   });
 
   it("answers 405 with Allow for a wrong method and 404 for an unknown route", async () => {

@@ -14,6 +14,17 @@
     "README.md",
     "CHANGELOG.md"
   ],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "webhook",
+    "caretaker"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
@@ -30,6 +41,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "^1.4.0",
+    "typebox": "^1.4.3",
     "zod": "^4.1.0"
   },
   "devDependencies": {

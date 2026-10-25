@@ -11,17 +11,27 @@ not copy them here; two copies drift and a repo copy would shadow the one
 the owner keeps improving). The skills in this repo are project knowledge,
 so a stranger cloning it still gets the rules that matter.
 
-## Source (`src/`) — the contract, mostly not the implementation
+## Source (`src/`) — the contract plus the listener, queue, and entry
 
-- `index.ts` — extension entry. **Stub: `activate()` throws.**
+- `index.ts` — the real Pi extension entry: default-exported factory taking
+  `pi: ExtensionAPI`. Starts the listener + queue + background-turn pump on
+  `session_start`, stops idempotently on `session_shutdown`, registers
+  `caretaker-status` and the `caretaker_notify` model tool. Env names are
+  provisional (see `src/config.ts`); the Pi API surface comes from
+  `@earendil-works/pi-coding-agent` (ADR-0001, ADR-0003, ADR-0004).
+- `config.ts` — provisional operator contract (env names, requiredness,
+  defaults) with `ConfigurationError` codes. No ADR-0005 exists yet: the
+  names await the owner's word, and the tests pin the current contract so a
+  rename breaks loudly in one place. Never log values.
 - `events.ts` — zod envelope schema, `MAX_EVENT_BODY_BYTES` (64 KiB),
   `isBodyOversized`, triage boundary (`buildTriageRequest`,
-  `TRIAGE_INSTRUCTIONS`). `handlePostEvents` is a **stub that throws** —
-  the authenticated listener, validation, and queue admission are a future
-  ticket. Security-sensitive (ADR-0001, ADR-0002).
-- `queue.ts` — bounded in-memory FIFO. **Interface + types only**, no
-  semantics yet (admission, overflow, sequencing belong to the queue
-  ticket). Security-relevant: `202`-means-queued lives or dies here.
+  `TRIAGE_INSTRUCTIONS`), and the implemented `handlePostEvents`
+  (bearer check → cap → parse → schema → exactly one enqueue; 202 only on
+  acceptance). Security-sensitive (ADR-0001, ADR-0002).
+- `queue.ts` — bounded in-memory FIFO plus the single-flight delivery pump
+  (`createEventQueue`, `startDelivery`). Documented non-durable: a fresh
+  instance starts empty. Sequencing/overflow/restart-loss pinned by tests.
+  Security-relevant: `202`-means-queued lives or dies here.
 - `health.ts` — `buildHealth` / `getHealth`; commit injected at build time
   via `tsup.config.ts` (`__PI_CARETAKER_COMMIT__`, falls back to `"dev"`).
   Actually implemented and tested — the one load-bearing runtime file.

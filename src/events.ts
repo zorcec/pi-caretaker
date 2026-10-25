@@ -112,13 +112,13 @@ export function handlePostEvents(
   if (byteLength > MAX_EVENT_BODY_BYTES) {
     return { status: 413, error: "request body exceeds the 64 KiB limit" };
   }
+  const text =
+    typeof req.rawBody === "string"
+      ? req.rawBody
+      : Buffer.from(req.rawBody).toString("utf8");
   let parsed: unknown;
   try {
-    parsed = JSON.parse(
-      typeof req.rawBody === "string"
-        ? req.rawBody
-        : Buffer.from(req.rawBody).toString("utf8"),
-    );
+    parsed = JSON.parse(text);
   } catch {
     return { status: 400, error: "malformed JSON body" };
   }
