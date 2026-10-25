@@ -24,5 +24,12 @@
       "addedAt": "2026-10-25T17:03:07.132Z"
     }
   ],
-  "updated": "2026-10-25T17:03:07.133Z"
+  "updated": "2026-10-25T17:32:56.992Z",
+  "commits": [
+    {
+      "sha": "65fec0d5ebbbf2f385548d853e34ea3d61c914af",
+      "message": "chore(release): first versioned CHANGELOG entry via changesets (0.1.1) with releasability invariant",
+      "timestamp": "2026-10-25T17:32:56.991Z"
+    }
+  ]
 }

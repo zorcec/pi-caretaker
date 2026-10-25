@@ -24,5 +24,12 @@
       "addedAt": "2026-10-25T17:03:08.326Z"
     }
   ],
-  "updated": "2026-10-25T17:03:08.327Z"
+  "updated": "2026-10-25T17:33:43.739Z",
+  "commits": [
+    {
+      "sha": "879c063216554314163ad670189bbbff6f732664",
+      "message": "docs(contributing): record the strict drift rule and its three remedies",
+      "timestamp": "2026-10-25T17:33:43.738Z"
+    }
+  ]
 }

@@ -24,5 +24,12 @@
       "addedAt": "2026-10-25T17:03:13.245Z"
     }
   ],
-  "updated": "2026-10-25T17:03:13.245Z"
+  "updated": "2026-10-25T17:28:52.245Z",
+  "commits": [
+    {
+      "sha": "86f9679fa12f7298bf8450b57e47a359f0c822e7",
+      "message": "test(guards): importable runCheck/isTestIdentity/extractReleaseNotes with scripts coverage thresholds",
+      "timestamp": "2026-10-25T17:28:52.245Z"
+    }
+  ]
 }

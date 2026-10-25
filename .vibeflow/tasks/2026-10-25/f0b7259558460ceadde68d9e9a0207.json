@@ -24,5 +24,12 @@
       "addedAt": "2026-10-25T17:03:10.764Z"
     }
   ],
-  "updated": "2026-10-25T17:03:10.764Z"
+  "updated": "2026-10-25T17:31:24.694Z",
+  "commits": [
+    {
+      "sha": "8c39d520cd70ab71737ccde4399375afa4223d91",
+      "message": "docs(policy): no remote CI ever — local hooks only, human review for external PRs",
+      "timestamp": "2026-10-25T17:31:24.693Z"
+    }
+  ]
 }
