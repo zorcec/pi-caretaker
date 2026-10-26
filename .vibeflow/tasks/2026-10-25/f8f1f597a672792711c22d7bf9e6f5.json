@@ -1,7 +1,7 @@
 {
   "title": "Telegram adapter implementation",
   "description": "Implement the TelegramAdapter interface from src/telegram/index.ts: notify(text) as the single outbound path and onMessage(handler) as the single inbound path, over exactly one conversation (ADR-0003). Validate Pitgram first for silent shared-session background turns per docs/research/README.md; fall back to the smallest grammY bridge only via a new ADR. A test currently pins the module to zero runtime exports and must flip when this lands.",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -21,12 +21,19 @@
   "sortKey": "0000000018000000",
   "id": "f8f1f597a672792711c22d7bf9e6f5",
   "created": "2026-10-25T16:17:45.580Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "n80v83mym1nrzwds8rbrb2oc",
+      "text": "Implemented and landed as eef6e45 (pushed to main). Direct grammY Bot per ADR-0007: getMe-validated factory, explicit start() after handler attach, paired-chat-only inbound, fetch-seam error recording; entry auto-attaches when the env pair is present and degrades loudly otherwise; half-config fails with named codes; grammy ships bundled (noExternal). Tests: tests/grammy.test.ts (8 green), config telegram tests (3), entry wiring tests (3: inbound followUp, invalid-token degraded session, half-config refusal). Full pnpm check green (20 files, 173 passed + 5 todo); coverage thresholds green; artifact suite green. Lane fixes: microtask-starvation hang (stub yields to macrotask queue), error visibility via owned fetch seam, tsup external-to-bundled, ADR-0001/2/3/4/6 re-affirmations with 0003 Pitgram clause retired.",
+      "author": "agent",
+      "createdAt": "2026-10-26T10:21:27.478Z"
+    }
+  ],
   "files": [
     {
       "name": "f8f1f597-implementation-plan.md",
       "addedAt": "2026-10-25T16:25:26.591Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.978Z"
+  "updated": "2026-10-26T15:41:15.619Z"
 }

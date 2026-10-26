@@ -1,7 +1,7 @@
 {
   "title": "Queue and triage pipeline e2e suite",
   "description": "Blocked by the queue implementation (src/queue.ts is interface only). tests/e2e/pipeline.e2e.test.ts holds 7 it.todo cases using the recording doubles from tests/setup/doubles.ts: sequential non-interleaved delivery of concurrent arrivals, escape hatch notifying exactly once even when the model answers ignore, hostile webhook text reaching the model in the data channel only, silence on a not important verdict, capacity overflow rejecting only the arrival beyond capacity, documented event loss on restart, and Telegram replies keeping event context.",
-  "status": "backlog",
+  "status": "review",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -43,6 +43,12 @@
       "text": "Progress: escape-hatch pipeline case is now real (real socket/queue/pump/entry/fake transport: one notify, zero turns, hostile text never quoted). 6/7 pipeline cases green. Remaining todo: Telegram-reply-in-same-session — blocked on the real adapter (f8f1f597/Pitgram).",
       "author": "agent",
       "createdAt": "2026-10-25T21:05:17.221Z"
+    },
+    {
+      "id": "lpa6y66uad0rpd6nvb1tdqb3",
+      "text": "Complete: 7/7 pipeline cases green, zero it.todo left. Landed as 976a414 (pushed to main). The last case converts the Telegram-reply todo into a real test: full socket/queue/pump/entry path with the real grammy adapter on stubbed fetch — triage turn first, paired-chat reply follows as a second followUp in the same session. pnpm check green (20 files, 174 passed + 4 todo); coverage green. Blocker history: waited on queue (done), Pi API (done), vocabulary (done), and the real adapter (f8f1f597, done) — all resolved.",
+      "author": "agent",
+      "createdAt": "2026-10-26T10:34:36.993Z"
     }
   ],
   "files": [
@@ -51,5 +57,5 @@
       "addedAt": "2026-10-25T17:03:09.549Z"
     }
   ],
-  "updated": "2026-10-25T21:05:55.306Z"
+  "updated": "2026-10-26T15:41:15.619Z"
 }

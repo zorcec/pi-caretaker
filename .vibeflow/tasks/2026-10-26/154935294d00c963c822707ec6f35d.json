@@ -1,0 +1,19 @@
+{
+  "id": "154935294d00c963c822707ec6f35d",
+  "title": "Mocked-Telegram e2e: loopback Bot API server",
+  "author": "Tomislav Zorcec",
+  "status": "review",
+  "sortKey": "0000000002000000",
+  "updated": "2026-10-26T10:41:16.424Z",
+  "comments": [
+    {
+      "id": "muz1j1bn3ge2eqj4r6n8008f",
+      "text": "Implemented loopback fake Telegram Bot API e2e using real grammY client and real HTTP: paired inbound text becomes a same-session followUp, stranger is ignored, and host-dark deterministic notify sends with zero turns. No new dependencies. Tests: 1 e2e test passed standalone; full suite 21 files / 175 passed (4 todo). pnpm check and pnpm test:coverage green. Files: src/telegram/grammy.ts, tests/e2e/telegram-mock.e2e.test.ts, docs/decisions/0007-telegram-grammy-env.md. Commit 8986a95 pushed to origin/main.",
+      "author": "agent",
+      "createdAt": "2026-10-26T10:41:16.582Z"
+    }
+  ],
+  "verified": true,
+  "description": "Loopback mock of the Telegram Bot API (getMe/deleteWebhook/getUpdates/sendMessage) over real HTTP on 127.0.0.1:0, wired via grammY's documented client.apiRoot pattern. Proves the full entry path — webhook socket, queue, pump, escape hatch, grammy client, real HTTP — with zero network beyond loopback and zero new deps (tg-mock/docker rejected per V1 non-goals). Pins ADR-0007 alongside tests/grammy.test.ts.",
+  "created": "2026-10-26T15:41:15.606Z"
+}

@@ -1,7 +1,7 @@
 {
   "title": "Telegram adapter and Pitgram spike",
   "description": "src/telegram/index.ts is type-only (a test pins zero runtime keys). Run the proof-of-concept list from docs/concept/pi-caretaker-high-level-concept-v3.md against a persistent Pi with pi-caretaker and Pitgram loaded: auth, silent background turn, explicit notify, reply context, sequential load, restart recovery. Record the verdict in docs/research/README.md. If Pitgram cannot keep background turns silent in the shared session, fall back to the smallest grammY bridge and write a new ADR rather than drifting.",
-  "status": "backlog",
+  "status": "done",
   "selector": "/",
   "author": "Tomislav Zorcec",
   "priority": "High",
@@ -17,12 +17,19 @@
   "sortKey": "0000000007000000",
   "id": "17c69a5349425d0e1e7f95a46474fd",
   "created": "2026-10-25T16:14:35.421Z",
-  "comments": [],
+  "comments": [
+    {
+      "id": "u6hqf0t91hjwvk4dv4jcj992",
+      "text": "Superseded, will not be built: the owner explicitly rejected Pitgram's interactive setup flow and chose ENV-only credentials with a direct grammY Bot instead (recorded in ADR-0007). The adapter is implemented under f8f1f597, landed as eef6e45. No Pitgram integration, no second Telegram path.",
+      "author": "agent",
+      "createdAt": "2026-10-26T10:21:32.337Z"
+    }
+  ],
   "files": [
     {
       "name": "17c69a53-implementation-plan.md",
       "addedAt": "2026-10-25T17:03:07.734Z"
     }
   ],
-  "updated": "2026-10-25T17:19:55.977Z"
+  "updated": "2026-10-26T15:41:15.619Z"
 }

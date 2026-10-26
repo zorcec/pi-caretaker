@@ -1,0 +1,10 @@
+{
+  "id": "762421ff3386a2cf6b56e9f3944b16",
+  "title": "Local LLM for e2e via own docker compose (deferred)",
+  "author": "Tomislav Zorcec",
+  "status": "backlog",
+  "sortKey": "0000000002000000",
+  "updated": "2026-10-26T13:58:20.862Z",
+  "description": "Deferred: run the e2e-local tier against a local LLM on the owner's RX 9070 16GB box instead of opencode-go MiMo. Compose file already staged at /home/zorcec/pi-e2e-llm/docker-compose.yml (outside the repo by decision) with the Pi models.json snippet inside. Still needed: pick the model (quick but capable, qwen3:8b-class), pull it, point the e2e tier at it. Parked until the MiMo-based harness needs replacing.",
+  "created": "2026-10-26T15:41:15.611Z"
+}
