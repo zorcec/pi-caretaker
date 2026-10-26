@@ -89,6 +89,8 @@ export function testEnv(overrides: Record<string, string> = {}): void {
   delete process.env["PI_CARETAKER_HOST"];
   delete process.env["PI_CARETAKER_PORT"];
   delete process.env["PI_CARETAKER_ALERTS_QUEUE_CAPACITY"];
+  delete process.env["PI_CARETAKER_TELEGRAM_BOT_TOKEN"];
+  delete process.env["PI_CARETAKER_TELEGRAM_CHAT_ID"];
   Object.assign(process.env, {
     PI_CARETAKER_TOKEN: "test-token",
     PI_CARETAKER_HOST: "127.0.0.1",

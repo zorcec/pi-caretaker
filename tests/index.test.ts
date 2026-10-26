@@ -425,6 +425,20 @@ describe("pi-caretaker extension entry", () => {
     await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
 
+  it("session_start with only BOT_TOKEN set performs no fetch", async () => {
+    process.env["PI_CARETAKER_TELEGRAM_CHAT_ID"] = "ambient-chat";
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token" });
+    const fetchSpy = vi.fn(async (): Promise<Response> => { throw new Error("blocked test fetch"); });
+    const fake = createFakePi();
+    piCaretaker(fake.api, { fetch: fetchSpy });
+    await fake.handlers.get("session_start")?.({}, fakeContext(fake.notifies));
+    try {
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      await fake.handlers.get("session_shutdown")?.({}, fakeContext(fake.notifies));
+    }
+  });
+
   it("refuses to start without a token, loudly, and never opens a socket", async () => {
     testEnv();
     delete process.env["PI_CARETAKER_TOKEN"];
