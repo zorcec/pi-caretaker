@@ -127,6 +127,16 @@ release, not just etiquette.
 - Do not merge external PRs on green-looking checks alone — there is no
   remote CI yet, and local hooks do not run on someone else's fork.
 
+## 9. Bugs found mid-work — ticket it, then fix if in scope
+
+- If you find a product bug while working (yours or not): file it as a
+  Bug ticket first (vibeflow task management skill — repro + expected /
+  actual). Never silently fix without a ticket, never silently walk past.
+- Fix it in the same change only if it is small, adjacent to your ticket's
+  scope, and keeps the one-change-one-commit rule intact. Otherwise leave
+  the fix to the ticket with a pointer to the code.
+- A fix follows §4 like any other change: biting test, red→green proof.
+
 ## Execution invariants (learned 2026-10-25 on vibeflow)
 
 - **One deliverable per lane brief.** A brief with six deliverables burned
