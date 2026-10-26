@@ -64,6 +64,7 @@ export { createWebhookListener, type WebhookListenerOptions } from "./listener.j
 type NotifyTransport = Pick<TelegramAdapter, "notify">;
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
+const EMPTY_OWNER_REPLY = "(no reply produced)";
 
 function sanitizeTelegramLogError(error: unknown, secrets: readonly (string | undefined)[]): string {
   let message = error instanceof Error ? error.message : String(error);
@@ -395,22 +396,27 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     const inboundMessageId = relayInboundMessageId;
     relayInboundMessageId = undefined;
     const duration = elapsedText();
-    if (activeStatusId !== 0) void managedTelegram?.editMessageText(activeStatusId, `done · ${duration}`).catch(() => undefined);
-
     const finalAssistant = [...event.messages]
       .reverse()
       .find((message) => message.role === "assistant");
-    if (finalAssistant === undefined) return;
-    const answer = finalAssistant.content
+    const answer = finalAssistant?.content
       .filter((part): part is { type: "text"; text: string } => part.type === "text")
       .map((part) => part.text)
-      .join("");
-    if (answer.length === 0 || telegram === undefined) return;
+      .join("") ?? "";
+    const hasAnswer = answer.length > 0;
+    const reply = hasAnswer
+      ? Array.from(answer).slice(0, TELEGRAM_MESSAGE_LIMIT).join("")
+      : EMPTY_OWNER_REPLY;
+    if (activeStatusId !== 0) {
+      const statusLine = hasAnswer ? `done · ${duration}` : EMPTY_OWNER_REPLY;
+      void managedTelegram?.editMessageText(activeStatusId, statusLine).catch(() => undefined);
+    }
+    if (telegram === undefined) return;
 
-    const reply = Array.from(answer).slice(0, TELEGRAM_MESSAGE_LIMIT).join("");
     try {
       if (managedTelegram !== undefined && inboundMessageId !== undefined) {
-        await managedTelegram.sendMessage(reply, inboundMessageId);
+        const sentId = await managedTelegram.sendMessage(reply, inboundMessageId);
+        if (sentId === 0) await telegram.notify(reply);
       } else {
         await telegram.notify(reply);
       }

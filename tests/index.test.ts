@@ -43,9 +43,9 @@ describe("pi-caretaker extension entry", () => {
       onPairedMessage: vi.fn((handler: (text: string, messageId: number) => void) => { inbound = handler; }),
       react: vi.fn(async (...args: unknown[]) => { calls.push({ type: "react", args }); }),
       sendChatAction: vi.fn(async (...args: unknown[]) => { calls.push({ type: "typing", args }); }),
-      sendMessage: vi.fn(async (...args: unknown[]) => {
+      sendMessage: vi.fn(async (...args: unknown[]): Promise<number> => {
         calls.push({ type: "send", args });
-        return args[0] === "working…" ? 72 : 0;
+        return args[0] === "working…" ? 72 : 73;
       }),
       editMessageText: vi.fn(async (...args: unknown[]) => { calls.push({ type: "edit", args }); }),
     };
@@ -90,6 +90,41 @@ describe("pi-caretaker extension entry", () => {
     await assistantEnd(fake);
     expect(attached.managed.editMessageText).toHaveBeenLastCalledWith(72, expect.stringMatching(/^done · /));
     vi.useRealTimers();
+  });
+
+  it("sends the fixed empty-answer notice quoted on a fast relay turn", async () => {
+    vi.useFakeTimers();
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "empty fast", 82);
+    await assistantEnd(fake, "");
+    expect(attached.managed.sendMessage).toHaveBeenCalledWith("(no reply produced)", 82);
+    expect(attached.managed.editMessageText).not.toHaveBeenCalled();
+    expect(attached.managed.notify).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("edits an existing status to the fixed notice when the final answer is empty", async () => {
+    vi.useFakeTimers();
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "empty slow", 83);
+    await vi.advanceTimersByTimeAsync(3000);
+    await assistantEnd(fake, "");
+    expect(attached.managed.editMessageText).toHaveBeenCalledWith(72, "(no reply produced)");
+    expect(attached.managed.sendMessage).toHaveBeenCalledWith("(no reply produced)", 83);
+    vi.useRealTimers();
+  });
+
+  it("logs and swallows empty-answer notify fallback failure", async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { lines.push(args.join(" ")); });
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    attached.managed.sendMessage.mockResolvedValue(0);
+    attached.managed.notify.mockRejectedValue(new Error("notify transport failed"));
+    await beginRelay(fake, attached, "empty failure", 84);
+    await expect(assistantEnd(fake, "")).resolves.toBeUndefined();
+    expect(attached.managed.sendMessage).toHaveBeenCalledWith("(no reply produced)", 84);
+    expect(attached.managed.notify).toHaveBeenCalledWith("(no reply produced)");
+    expect(lines.some((line) => line.includes("telegram notify-failed") && line.includes("notify transport failed"))).toBe(true);
   });
 
   it("quotes the inbound id on the final answer through managed sendMessage", async () => {

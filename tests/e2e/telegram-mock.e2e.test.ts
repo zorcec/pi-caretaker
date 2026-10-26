@@ -60,6 +60,24 @@ describe("mocked Telegram e2e (loopback Bot API)", () => {
     } finally { await mock.close(); }
   });
 
+  it("sends a quoted fixed notice over real HTTP when an owner turn has no text", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi(); piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies); await startedPort(fake, ctx);
+      mock.enqueueUpdates([{ update_id: 3, message: { message_id: 63, chat: { id: 42, type: "private" }, text: "owner prompt", date: 1 } }]);
+      const deadline = Date.now() + 3000;
+      while (!fake.sent.some((turn) => turn.content === "owner prompt") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "owner prompt" }, ctx);
+      await fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text: "" }] }] }, ctx);
+      const replyDeadline = Date.now() + 3000;
+      while (!mock.sends.some((send) => send.text === "(no reply produced)") && Date.now() < replyDeadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(mock.sends.find((send) => send.text === "(no reply produced)")?.reply_parameters).toEqual({ message_id: 63 });
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally { await mock.close(); }
+  });
+
   it("swallows an HTTP 400 receipt reaction and still relays the owner answer", async () => {
     testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
     const lines: string[] = [];
