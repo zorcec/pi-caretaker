@@ -180,5 +180,93 @@ describe("event pipeline (queue -> triage -> Telegram)", () => {
     expect(after.dequeue()).toBeUndefined();
   });
 
-  it.todo("a Telegram reply is answered in the same session, with event context");
+  function stubTelegramFetch(
+    impl: (url: string) => unknown,
+  ): {
+    fetch: (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ) => Promise<Response>;
+  } {
+    return {
+      fetch: async (
+        url: string | URL | Request,
+        init?: RequestInit,
+      ): Promise<Response> => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (init?.signal?.aborted) {
+          throw new DOMException("The operation was aborted", "AbortError");
+        }
+        const result = impl(String(url));
+        if (result instanceof Error) throw result;
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    };
+  }
+
+  it("a Telegram reply is answered in the same session, with event context", async () => {
+    testEnv({
+      PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
+      PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+    });
+    const t0 = Date.now();
+    let deliveredTelegram = false;
+    const { fetch } = stubTelegramFetch((url) => {
+      if (url.endsWith("/getMe")) {
+        return {
+          ok: true,
+          result: { id: 1, is_bot: true, first_name: "Caretaker", username: "t" },
+        };
+      }
+      if (url.endsWith("/deleteWebhook")) return { ok: true, result: true };
+      if (url.endsWith("/getUpdates")) {
+        if (!deliveredTelegram && Date.now() - t0 > 500) {
+          deliveredTelegram = true;
+          return {
+            ok: true,
+            result: [
+              {
+                update_id: 1,
+                message: {
+                  message_id: 1,
+                  chat: { id: 42, type: "private" },
+                  text: "acknowledged, investigating",
+                  date: 1,
+                },
+              },
+            ],
+          };
+        }
+        return { ok: true, result: [] };
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const fake = createFakePi();
+    piCaretaker(fake.api, { fetch });
+    const ctx = fakeContext(fake.notifies);
+    const port = await startedPort(fake, ctx);
+
+    // The event goes through the real socket/queue/pump first, so the
+    // triage turn exists before the Telegram reply lands: the reply joins
+    // a session that already has event context, never a fresh one.
+    const { status } = await postEvent(port, {
+      message: "db-primary slow queries",
+    });
+    expect(status).toBe(202);
+    await waitForTurns(fake, 1);
+
+    const start = Date.now();
+    while (fake.sent.length < 2 && Date.now() - start < 5000) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(fake.sent).toHaveLength(2);
+    expect(fake.sent[0]?.content).toContain(TRIAGE_INSTRUCTIONS);
+    expect(fake.sent[1]?.content).toContain("acknowledged, investigating");
+    expect(fake.sent[1]?.options).toEqual({ deliverAs: "followUp" });
+
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
+  });
 });
