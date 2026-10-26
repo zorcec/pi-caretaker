@@ -304,6 +304,8 @@ describe("resolveStartConfig", () => {
         "caretaker",
         "--extension",
         "./dist/index.js",
+        "--thinking",
+        "minimal",
       ],
       foreground: false,
       detached: true,
@@ -365,7 +367,7 @@ describe("resolveStartConfig", () => {
     expect(plan).toMatchObject({
       ok: true,
       command: "pi",
-      args: ["--name", "caretaker", "--extension", "./dist/index.js"],
+      args: ["--name", "caretaker", "--extension", "./dist/index.js", "--thinking", "minimal"],
       foreground: true,
       detached: false,
       logFile: "/repo/pi-caretaker.log",
@@ -373,6 +375,24 @@ describe("resolveStartConfig", () => {
       healthUrl: "http://127.0.0.1:8787/health",
     });
     if (plan.ok) expect(plan.args).not.toContain("rpc");
+  });
+
+  it("uses the configured thinking level in both launch modes", () => {
+    const rpc = resolveStartConfig({ env: { PI_CARETAKER_TOKEN: "t", PI_CARETAKER_THINKING: "high" }, hasDist: true });
+    const foreground = resolveStartConfig({ env: { PI_CARETAKER_TOKEN: "t", PI_CARETAKER_THINKING: "high" }, hasDist: true, foreground: true });
+    expect(rpc.ok && rpc.args.slice(-2)).toEqual(["--thinking", "high"]);
+    expect(foreground.ok && foreground.args.slice(-2)).toEqual(["--thinking", "high"]);
+  });
+
+  it("rejects invalid thinking levels without echoing the supplied value", () => {
+    const invalid = "ultra-secret";
+    const plan = resolveStartConfig({ env: { PI_CARETAKER_TOKEN: "t", PI_CARETAKER_THINKING: invalid }, hasDist: true });
+    expect(plan).toMatchObject({
+      ok: false,
+      exitCode: 1,
+      message: "PI_CARETAKER_THINKING must be one of off, minimal, low, medium, high, xhigh, max",
+    });
+    if (!plan.ok) expect(plan.message).not.toContain(invalid);
   });
 
   it("treats an omitted secrets file as empty", () => {

@@ -36,6 +36,15 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
         "PI_CARETAKER_TOKEN is required. Set it in secrets.env or the environment (generate one with: openssl rand -hex 24). Never share this token.",
     };
   }
+  const thinking = env.PI_CARETAKER_THINKING ?? "minimal";
+  const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  if (!thinkingLevels.includes(thinking)) {
+    return {
+      ok: false,
+      exitCode: 1,
+      message: "PI_CARETAKER_THINKING must be one of off, minimal, low, medium, high, xhigh, max",
+    };
+  }
   if (!hasDist) {
     return {
       ok: false,
@@ -49,8 +58,8 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
   // print mode and exits without ever starting a session. RPC stays up.
   // --foreground keeps the plain extension load for interactive debugging.
   const args = foreground
-    ? ["--name", "caretaker", "--extension", "./dist/index.js"]
-    : ["--mode", "rpc", "--name", "caretaker", "--extension", "./dist/index.js"];
+    ? ["--name", "caretaker", "--extension", "./dist/index.js", "--thinking", thinking]
+    : ["--mode", "rpc", "--name", "caretaker", "--extension", "./dist/index.js", "--thinking", thinking];
   return {
     ok: true,
     command: "pi",
