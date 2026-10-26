@@ -13,6 +13,7 @@
  * can arrive before anyone is listening for it.
  */
 import { Bot } from "grammy";
+import type { InlineKeyboardMarkup } from "grammy/types";
 import type { TelegramAdapter, TelegramMessageHandler } from "./index.js";
 
 export interface TelegramTransportConfig {
@@ -75,9 +76,11 @@ function describeError(error: unknown): TelegramPollingIssue {
 
 export interface ManagedTelegramAdapter extends TelegramAdapter {
   onPairedMessage(handler: (text: string, messageId: number) => void): void;
+  onCommand(name: "stop" | "compact" | "thinking" | "model", handler: (messageId: number) => void): void;
+  onCommandCallback(handler: (data: string, messageId: number) => void): void;
   react(messageId: number, emoji: "👀"): Promise<void>;
   sendChatAction(action: "typing"): Promise<void>;
-  sendMessage(text: string, replyToMessageId?: number): Promise<number>;
+  sendMessage(text: string, replyToMessageId?: number, replyMarkup?: InlineKeyboardMarkup): Promise<number>;
   editMessageText(messageId: number, text: string): Promise<void>;
   /** Begin long polling (idempotent — a running bot ignores repeats). */
   start(): void;
@@ -124,12 +127,33 @@ export async function createTelegramAdapter(
 
   const handlers = new Set<TelegramMessageHandler>();
   const pairedHandlers = new Set<(text: string, messageId: number) => void>();
+  const commandHandlers = new Map<string, Set<(messageId: number) => void>>();
+  const commandCallbackHandlers = new Set<(data: string, messageId: number) => void>();
   const liveness = async (label: string, operation: () => Promise<unknown>): Promise<unknown> => {
     try { return await operation(); } catch (error) {
       console.error(`[pi-caretaker] telegram liveness-${label}-failed error=${String(error).replace(/[\\r\\n]+/g, " ").replace(/\\b\\d{6,}:[A-Za-z0-9_-]{20,}\\b/g, "[REDACTED]")}`);
       return undefined;
     }
   };
+  for (const command of ["stop", "compact", "thinking", "model"] as const) {
+    bot.command(command, async (ctx, next) => {
+      if (String(ctx.chat?.id) !== config.chatId) return;
+      for (const handler of commandHandlers.get(command) ?? []) handler(ctx.msg.message_id);
+      await next();
+    });
+  }
+  bot.on("callback_query:data", async (ctx) => {
+    const callback = ctx.callbackQuery;
+    if (String(callback.message?.chat.id) !== config.chatId) return;
+    try {
+      await bot.api.answerCallbackQuery(callback.id);
+    } catch (error) {
+      console.error(`[pi-caretaker] telegram callback-ack-failed error=${String(error).replace(/[\\r\\n]+/g, " ").replace(/\\b\\d{6,}:[A-Za-z0-9_-]{20,}\\b/g, "[REDACTED]")}`);
+    }
+    const messageId = callback.message?.message_id;
+    if (typeof messageId !== "number") return;
+    for (const handler of [...commandCallbackHandlers]) handler(callback.data, messageId);
+  });
   const nonTextAcknowledgment = "pi-caretaker accepts text messages only — send text.";
   bot.on("message", async (ctx) => {
     const chatMatch = String(ctx.chat?.id) === config.chatId;
@@ -143,6 +167,7 @@ export async function createTelegramAdapter(
       console.error("[pi-caretaker] telegram dropped reason=chat_mismatch");
       return;
     }
+    if (text !== undefined && /^\/(?:stop|compact|thinking|model)(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(text)) return;
     if (text === undefined) {
       console.error("[pi-caretaker] telegram non-text acknowledged");
       try {
@@ -166,10 +191,19 @@ export async function createTelegramAdapter(
     },
     onMessage(handler: TelegramMessageHandler): void { handlers.add(handler); },
     onPairedMessage(handler): void { pairedHandlers.add(handler); },
+    onCommand(name, handler): void {
+      const registered = commandHandlers.get(name) ?? new Set<(messageId: number) => void>();
+      registered.add(handler);
+      commandHandlers.set(name, registered);
+    },
+    onCommandCallback(handler): void { commandCallbackHandlers.add(handler); },
     async react(messageId, emoji): Promise<void> { await liveness("reaction", () => bot.api.setMessageReaction(config.chatId, messageId, [{ type: "emoji", emoji }])); },
     async sendChatAction(action): Promise<void> { await liveness("typing", () => bot.api.sendChatAction(config.chatId, action)); },
-    async sendMessage(text, replyToMessageId): Promise<number> {
-      const result = await liveness("send", () => bot.api.sendMessage(config.chatId, text, replyToMessageId === undefined ? {} : { reply_parameters: { message_id: replyToMessageId } }));
+    async sendMessage(text, replyToMessageId, replyMarkup): Promise<number> {
+      const result = await liveness("send", () => bot.api.sendMessage(config.chatId, text, {
+        ...(replyToMessageId === undefined ? {} : { reply_parameters: { message_id: replyToMessageId } }),
+        ...(replyMarkup === undefined ? {} : { reply_markup: replyMarkup }),
+      }));
       return typeof result === "object" && result !== null && "message_id" in result ? Number(result.message_id) : 0;
     },
     async editMessageText(messageId, text): Promise<void> { await liveness("edit", () => bot.api.editMessageText(config.chatId, messageId, text)); },

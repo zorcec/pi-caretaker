@@ -30,6 +30,32 @@ afterEach(() => {
 });
 
 describe("mocked Telegram e2e (loopback Bot API)", () => {
+  it("completes an owner thinking-picker round over real HTTP", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi();
+      const selected: string[] = [];
+      const piApi = fake.api as unknown as { getThinkingLevel: () => string; setThinkingLevel: (level: string) => void };
+      piApi.getThinkingLevel = () => "minimal";
+      piApi.setThinkingLevel = (level) => { selected.push(level); };
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies);
+      await startedPort(fake, ctx);
+      mock.setNextMessageId(700);
+      mock.enqueueUpdates([{ update_id: 8, message: { message_id: 88, chat: { id: 42, type: "private" }, text: "/thinking", entities: [{ type: "bot_command", offset: 0, length: 9 }], date: 1 } }]);
+      await vi.waitFor(() => expect(mock.sends.some((send) => send.text.includes("Choose thinking level"))).toBe(true));
+      const picker = mock.sends.find((send) => send.text.includes("Choose thinking level"));
+      const keyboard = picker?.reply_markup as { inline_keyboard: { callback_data: string }[][] } | undefined;
+      expect(keyboard?.inline_keyboard.flat().map((button) => button.callback_data)).toEqual(["th:off", "th:minimal", "th:low", "th:medium", "th:high", "th:xhigh", "th:max"]);
+      mock.enqueueUpdates([{ update_id: 9, callback_query: { id: "pick-high", from: { id: 42 }, message: { message_id: 700, chat: { id: 42, type: "private" } }, data: "th:high" } }]);
+      await vi.waitFor(() => expect(selected).toEqual(["high"]));
+      await vi.waitFor(() => expect(mock.calls.some((call) => call.method === "answerCallbackQuery" && call.body?.callback_query_id === "pick-high")).toBe(true));
+      await vi.waitFor(() => expect(mock.sends.some((send) => send.text.startsWith("thinking: high"))).toBe(true));
+      expect(mock.sends.find((send) => send.text.startsWith("thinking: high"))?.reply_parameters).toEqual({ message_id: 700 });
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally { await mock.close(); }
+  });
   it("sends owner liveness and quoted answer over real HTTP while webhook turns stay silent", async () => {
     testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
     const mock = await startMockTelegram();

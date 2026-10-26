@@ -22,6 +22,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { InlineKeyboard } from "grammy";
 import type { Server } from "node:http";
 import {
   ConfigurationError,
@@ -65,6 +66,9 @@ type NotifyTransport = Pick<TelegramAdapter, "notify">;
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const EMPTY_OWNER_REPLY = "(no reply produced)";
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+type ThinkingLevel = typeof THINKING_LEVELS[number];
+type ModelPickerModel = NonNullable<ReturnType<ExtensionContext["modelRegistry"]["find"]>>;
 
 function sanitizeTelegramLogError(error: unknown, secrets: readonly (string | undefined)[]): string {
   let message = error instanceof Error ? error.message : String(error);
@@ -141,6 +145,13 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   let lastToolName: string | undefined;
   let lastStatusText = "";
   let lastStatusEditAt = 0;
+  let latestContext: ExtensionContext | undefined;
+  let activeOwnerAbort: (() => void) | undefined;
+  let ownerRelayEpoch = 0;
+  let activeOwnerRelayEpoch: number | undefined;
+  let stoppedOwnerRelayEpoch: number | undefined;
+  let pendingCompactMessageId: number | undefined;
+  let modelPickerSnapshots = new Map<number, readonly ModelPickerModel[]>();
   const clearLiveness = (): void => {
     if (typingTimer !== undefined) clearInterval(typingTimer);
     for (const timer of livenessTimers) clearTimeout(timer);
@@ -203,6 +214,98 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
    * (ADR-0006): the single-flight pump submits at most one turn, and
    * followUp delivery lets Pi order it against a running turn.
    */
+  const logControlFailure = (action: string, error: unknown): void => {
+    console.error(`[pi-caretaker] telegram ${action}-failed error=${sanitizeTelegramLogError(error, [session?.config.telegramBotToken, session?.config.telegramChatId])}`);
+  };
+  const sendControlReply = async (text: string, messageId: number): Promise<void> => {
+    if (managedTelegram === undefined) return;
+    const sent = await managedTelegram.sendMessage(text, messageId);
+    if (sent === 0) await telegram?.notify(text);
+  };
+  const installCommandHandlers = (adapter: ManagedTelegramAdapter): void => {
+    adapter.onCommand("stop", (messageId) => {
+      void (async () => {
+        if (!relayCurrentTurn || activeOwnerRelayEpoch === undefined || stoppedOwnerRelayEpoch === activeOwnerRelayEpoch) {
+          await sendControlReply("nothing running", messageId);
+          return;
+        }
+        const epoch = activeOwnerRelayEpoch;
+        stoppedOwnerRelayEpoch = epoch;
+        relayCurrentTurn = false;
+        clearLiveness();
+        const activeStatusId = statusMessageId;
+        statusMessageId = 0;
+        activeOwnerAbort?.();
+        if (activeStatusId !== 0) await adapter.editMessageText(activeStatusId, "stopped").catch(() => undefined);
+        await sendControlReply("stopped", messageId);
+      })().catch((error: unknown) => logControlFailure("stop", error));
+    });
+    adapter.onCommand("thinking", (messageId) => {
+      const current = pi.getThinkingLevel();
+      const keyboard = new InlineKeyboard();
+      for (const level of THINKING_LEVELS) keyboard.text(`${current === level ? "✓ " : ""}${level}`, `th:${level}`).row();
+      void adapter.sendMessage("Choose thinking level (this session only):", messageId, keyboard).catch((error: unknown) => logControlFailure("thinking-picker", error));
+    });
+    adapter.onCommand("model", (messageId) => {
+      const ctx = latestContext;
+      if (ctx === undefined) {
+        void sendControlReply("model: unavailable", messageId).catch((error: unknown) => logControlFailure("model-picker", error));
+        return;
+      }
+      const models = ctx.modelRegistry.getModelsOfType("chat");
+      const keyboard = new InlineKeyboard();
+      models.forEach((model, index) => {
+        keyboard.text(`${ctx.model?.provider === model.provider && ctx.model.id === model.id ? "✓ " : ""}${model.provider}/${model.id}`, `md:${index}`).row();
+      });
+      modelPickerSnapshots.clear();
+      void adapter.sendMessage("Choose model (this session only):", messageId, keyboard)
+        .then((pickerMessageId) => {
+          if (pickerMessageId !== 0) modelPickerSnapshots.set(pickerMessageId, models);
+        })
+        .catch((error: unknown) => logControlFailure("model-picker", error));
+    });
+    adapter.onCommand("compact", (messageId) => {
+      const ctx = latestContext;
+      if (relayCurrentTurn || (ctx !== undefined && !ctx.isIdle())) {
+        void sendControlReply("cannot compact while a turn is running", messageId).catch((error: unknown) => logControlFailure("compact", error));
+        return;
+      }
+      if (ctx === undefined) {
+        void sendControlReply("compaction failed", messageId).catch((error: unknown) => logControlFailure("compact", error));
+        return;
+      }
+      pendingCompactMessageId = messageId;
+      try { ctx.compact(); } catch (error) {
+        pendingCompactMessageId = undefined;
+        logControlFailure("compact", error);
+        void sendControlReply("compaction failed", messageId).catch((sendError: unknown) => logControlFailure("compact-reply", sendError));
+      }
+    });
+    adapter.onCommandCallback((data, messageId) => {
+      void (async () => {
+        const thinking = /^th:(off|minimal|low|medium|high|xhigh|max)$/.exec(data);
+        if (thinking !== null) {
+          const level = thinking[1] as ThinkingLevel;
+          pi.setThinkingLevel(level);
+          await sendControlReply(`thinking: ${level} (this session only)`, messageId);
+          return;
+        }
+        const modelSelection = /^md:(0|[1-9][0-9]*)$/.exec(data);
+        if (modelSelection !== null) {
+          const model = modelPickerSnapshots.get(messageId)?.[Number(modelSelection[1])];
+          if (model === undefined) {
+            await sendControlReply("invalid selection", messageId);
+            return;
+          }
+          const selected = await pi.setModel(model);
+          await sendControlReply(selected ? `model: ${model.provider}/${model.id} (this session only)` : "provider not authenticated", messageId);
+          return;
+        }
+        await sendControlReply("invalid selection", messageId);
+      })().catch((error: unknown) => logControlFailure("command-callback", error));
+    });
+  };
+
   const forwardPairedMessage = (text: string, messageId: number): void => {
     inboundMessageCount += 1;
     try {
@@ -234,6 +337,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   }
 
   async function start(ctx: ExtensionContext): Promise<void> {
+    latestContext = ctx;
     if (session !== undefined) return;
     const startGeneration = generation;
     pendingInboundTelegramMessages = [];
@@ -296,6 +400,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
           return;
         }
         adapter.onPairedMessage(forwardPairedMessage);
+        installCommandHandlers(adapter);
         telegram = adapter;
         managedTelegram = adapter;
         adapter.start();
@@ -310,6 +415,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     if (stopped) return;
     stopped = true;
     pendingInboundTelegramMessages = [];
+    modelPickerSnapshots.clear();
     relayCurrentTurn = false;
     clearLiveness();
     const active = session;
@@ -341,6 +447,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
         ? candidate as ManagedTelegramAdapter
         : undefined;
       managedTelegram?.onPairedMessage(forwardPairedMessage);
+      if (managedTelegram !== undefined) installCommandHandlers(managedTelegram);
     },
     getSession(): SessionSnapshot | undefined {
       if (session === undefined) return undefined;
@@ -366,8 +473,11 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     await stop().catch(() => undefined);
   });
 
-  pi.on("before_agent_start", (event) => {
-    relayCurrentTurn = false;
+  pi.on("before_agent_start", (event, ctx) => {
+  latestContext = ctx;
+  relayCurrentTurn = false;
+  activeOwnerAbort = undefined;
+  activeOwnerRelayEpoch = undefined;
     if (event.messageType !== "user") return;
     const pendingIndex = pendingInboundTelegramMessages.findIndex((message) => message.text === event.prompt);
     if (pendingIndex < 0) return;
@@ -375,6 +485,9 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     if (inbound === undefined) return;
     relayInboundMessageId = inbound.messageId;
     relayCurrentTurn = true;
+    ownerRelayEpoch += 1;
+    activeOwnerRelayEpoch = ownerRelayEpoch;
+    activeOwnerAbort = () => ctx.abort();
     try { startLiveness(inbound.messageId); } catch { /* notification-only */ }
   });
 
@@ -387,9 +500,27 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     } catch { /* notification-only */ }
   });
 
+  pi.on("session_compact", () => {
+    const messageId = pendingCompactMessageId;
+    pendingCompactMessageId = undefined;
+    if (messageId !== undefined) void sendControlReply("compacted", messageId).catch((error: unknown) => logControlFailure("compact-reply", error));
+  });
+
+  pi.on("session_compact_failed", (event) => {
+    const messageId = pendingCompactMessageId;
+    pendingCompactMessageId = undefined;
+    if (messageId !== undefined) {
+      // AgentSession.compact rejects before session_before_compact when its size pre-check finds nothing to summarize.
+      const result = event.errorMessage?.includes("Nothing to compact") === true ? "nothing to compact" : "compaction failed";
+      void sendControlReply(result, messageId).catch((error: unknown) => logControlFailure("compact-reply", error));
+    }
+  });
+
   pi.on("agent_end", async (event) => {
     if (!relayCurrentTurn) return;
     relayCurrentTurn = false;
+    activeOwnerAbort = undefined;
+    activeOwnerRelayEpoch = undefined;
     clearLiveness();
     const activeStatusId = statusMessageId;
     statusMessageId = 0;

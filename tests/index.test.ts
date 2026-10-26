@@ -37,10 +37,14 @@ describe("pi-caretaker extension entry", () => {
   function attachManaged(fake: ReturnType<typeof createFakePi>) {
     const calls: { type: string; args: unknown[] }[] = [];
     let inbound: ((text: string, messageId: number) => void) | undefined;
+    const commands = new Map<string, (messageId: number) => void>();
+    let commandCallback: ((data: string, messageId: number) => void) | undefined;
     const managed = {
       notify: vi.fn(async (...args: unknown[]) => { calls.push({ type: "notify", args }); }),
       onMessage: vi.fn(),
       onPairedMessage: vi.fn((handler: (text: string, messageId: number) => void) => { inbound = handler; }),
+      onCommand: vi.fn((name: string, handler: (messageId: number) => void) => { commands.set(name, handler); }),
+      onCommandCallback: vi.fn((handler: (data: string, messageId: number) => void) => { commandCallback = handler; }),
       react: vi.fn(async (...args: unknown[]) => { calls.push({ type: "react", args }); }),
       sendChatAction: vi.fn(async (...args: unknown[]) => { calls.push({ type: "typing", args }); }),
       sendMessage: vi.fn(async (...args: unknown[]): Promise<number> => {
@@ -49,9 +53,13 @@ describe("pi-caretaker extension entry", () => {
       }),
       editMessageText: vi.fn(async (...args: unknown[]) => { calls.push({ type: "edit", args }); }),
     };
+    const piControls = fake.api as unknown as { getThinkingLevel: () => string; setThinkingLevel: (level: string) => void; setModel: (model: unknown) => Promise<boolean> };
+    piControls.getThinkingLevel = () => "minimal";
+    piControls.setThinkingLevel = vi.fn();
+    piControls.setModel = vi.fn(async () => true);
     const controls = piCaretaker(fake.api);
     controls.attachTelegram(managed);
-    return { calls, managed, inbound: (text: string, id: number): void => inbound?.(text, id), controls };
+    return { calls, managed, inbound: (text: string, id: number): void => inbound?.(text, id), command: (name: string, id: number): void => commands.get(name)?.(id), callback: (data: string, id: number): void => commandCallback?.(data, id), controls };
   }
 
   async function beginRelay(fake: ReturnType<typeof createFakePi>, attached: ReturnType<typeof attachManaged>, text = "prompt", id = 29): Promise<void> {
@@ -61,6 +69,153 @@ describe("pi-caretaker extension entry", () => {
 
   const assistantEnd = (fake: ReturnType<typeof createFakePi>, text = "answer") =>
     fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text }] }] }, fakeContext(fake.notifies));
+
+  it("routes only the four supported commands without forwarding them as turns", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    for (const [index, command] of (["stop", "compact", "thinking", "model"] as const).entries()) attached.command(command, index + 1);
+    expect(attached.managed.onCommand.mock.calls.map(([name]) => name)).toEqual(["stop", "thinking", "model", "compact"]);
+    expect(fake.sent).toEqual([]);
+    expect(attached.managed.onMessage).not.toHaveBeenCalled();
+  });
+
+  it("/stop with no active owner turn replies without aborting", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const ctx = fakeContext(fake.notifies);
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx);
+    attached.command("stop", 1);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("nothing running", 1));
+    expect(ctx.abort).toBeUndefined();
+  });
+
+  it("hop-logs a failed command reply without throwing", async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { lines.push(args.join(" ")); });
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    attached.managed.sendMessage.mockRejectedValue(new Error("reply transport failed"));
+    attached.command("stop", 3);
+    await vi.waitFor(() => expect(lines.some((line) => line.includes("stop-failed") && line.includes("reply transport failed"))).toBe(true));
+  });
+
+  it("/stop aborts one active owner epoch and duplicate presses are idempotent", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const abort = vi.fn(); const ctx = { ...fakeContext(fake.notifies), abort };
+    attached.inbound("active owner", 2);
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "active owner" }, ctx);
+    attached.command("stop", 10);
+    attached.command("stop", 11);
+    await vi.waitFor(() => expect(abort).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledTimes(2));
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(fake.sent).toHaveLength(1);
+    expect(attached.managed.sendMessage).toHaveBeenNthCalledWith(1, "stopped", 10);
+    expect(attached.managed.sendMessage).toHaveBeenNthCalledWith(2, "nothing running", 11);
+  });
+
+  it("/compact idle waits for the compact outcome before replying", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const compact = vi.fn(); const ctx = { ...fakeContext(fake.notifies), isIdle: () => true, compact };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx);
+    attached.command("compact", 20);
+    expect(compact).toHaveBeenCalledTimes(1);
+    expect(attached.managed.sendMessage).not.toHaveBeenCalled();
+    await fake.handlers.get("session_compact")?.({}, ctx);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("compacted", 20));
+  });
+
+  it("/compact reports nothing to compact for Pi's small-session pre-check", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const ctx = { ...fakeContext(fake.notifies), isIdle: () => true, compact: vi.fn() };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("compact", 25);
+    await fake.handlers.get("session_compact_failed")?.({ errorMessage: "Compaction failed: Nothing to compact (session too small)" }, ctx as never);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("nothing to compact", 25));
+  });
+
+  it("/compact keeps generic failures distinct from a small-session no-op", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const ctx = { ...fakeContext(fake.notifies), isIdle: () => true, compact: vi.fn() };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("compact", 26);
+    await fake.handlers.get("session_compact_failed")?.({ errorMessage: "summarizer provider failed" }, ctx as never);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("compaction failed", 26));
+  });
+
+  it("/compact refuses to compact while an owner turn is running", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const compact = vi.fn(); const ctx = { ...fakeContext(fake.notifies), isIdle: () => false, compact };
+    attached.inbound("busy owner", 19);
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "busy owner" }, ctx as never);
+    attached.command("compact", 20);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("cannot compact while a turn is running", 20));
+    expect(compact).not.toHaveBeenCalled();
+  });
+
+  it("/thinking picker lists seven levels and callback applies a session level", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType: () => [] }, model: undefined };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("thinking", 21);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
+    const markup = attached.managed.sendMessage.mock.calls.at(-1)?.[2] as { inline_keyboard: { text: string; callback_data: string }[][] };
+    expect(markup.inline_keyboard.flat().map((button) => button.callback_data)).toEqual(["th:off", "th:minimal", "th:low", "th:medium", "th:high", "th:xhigh", "th:max"]);
+    attached.callback("th:high", 21);
+    await vi.waitFor(() => expect((fake.api as unknown as { setThinkingLevel: ReturnType<typeof vi.fn> }).setThinkingLevel).toHaveBeenCalledWith("high"));
+    expect(attached.managed.sendMessage).toHaveBeenLastCalledWith("thinking: high (this session only)", 21);
+  });
+
+  it("/model replies with a fixed unavailable message before session context exists", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    attached.command("model", 24);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("model: unavailable", 24));
+  });
+
+  it("/model picker keeps long registry ids within Telegram callback data and selects by index", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const model = { provider: "very-long-provider-name", id: "m".repeat(90) };
+    const find = vi.fn(() => model);
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType: () => [model], find }, model: undefined };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("model", 22);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
+    const markup = attached.managed.sendMessage.mock.calls.at(-1)?.[2] as { inline_keyboard: { callback_data: string }[][] };
+    const data = markup.inline_keyboard.flat()[0]?.callback_data ?? "";
+    expect(new TextEncoder().encode(data).length).toBeLessThanOrEqual(64);
+    attached.callback(data, 73);
+    await vi.waitFor(() => expect((fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel).toHaveBeenCalledWith(model));
+  });
+
+  it("/model rejects an out-of-range picker index with a fixed reply", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const model = { provider: "provider", id: "model" };
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType: () => [model] }, model: undefined };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("model", 27);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
+    await Promise.resolve();
+    attached.callback("md:8", 73);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenLastCalledWith("invalid selection", 73));
+    expect((fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel).not.toHaveBeenCalled();
+  });
+
+  it("/model picker lists registry models and unauthenticated selection reports failure", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const model = { provider: "opencode-go", id: "mimo-v2.6-flash" };
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType: () => [model], find: () => model }, model: undefined };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("model", 22);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
+    const markup = attached.managed.sendMessage.mock.calls.at(-1)?.[2] as { inline_keyboard: { callback_data: string }[][] };
+    expect(markup.inline_keyboard.flat().map((button) => button.callback_data)).toEqual(["md:0"]);
+    (fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel.mockResolvedValue(false);
+    attached.callback("md:0", 73);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenLastCalledWith("provider not authenticated", 73));
+  });
+
+  it("malformed picker callback returns a fixed error without throwing", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    expect(() => attached.callback("md:../../bad", 23)).not.toThrow();
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("invalid selection", 23));
+  });
 
   it("fast relay shows receipt and typing but no status message", async () => {
     vi.useFakeTimers();
@@ -187,6 +342,8 @@ describe("pi-caretaker extension entry", () => {
     expect([...fake.handlers.keys()].sort()).toEqual([
       "agent_end",
       "before_agent_start",
+      "session_compact",
+      "session_compact_failed",
       "session_shutdown",
       "session_start",
       "tool_execution_start",

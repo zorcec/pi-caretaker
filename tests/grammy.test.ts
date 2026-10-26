@@ -154,6 +154,45 @@ describe("grammY Telegram adapter", () => {
     }
   });
 
+  it("routes the four owner commands and only acknowledges paired callbacks", async () => {
+    const updates = ["stop", "compact", "thinking", "model"].map((name, index) => ({
+      update_id: index + 1,
+      message: { message_id: index + 1, chat: { id: 42, type: "private" }, text: `/${name}`, entities: [{ type: "bot_command", offset: 0, length: name.length + 1 }], date: 1 },
+    }));
+    updates.push({ update_id: 5, message: { message_id: 5, chat: { id: 99, type: "private" }, text: "/stop", entities: [{ type: "bot_command", offset: 0, length: 5 }], date: 1 } });
+    const callbacks = [
+      { update_id: 6, callback_query: { id: "owner-callback", from: { id: 42 }, message: { message_id: 6, chat: { id: 42, type: "private" } }, data: "th:high" } },
+      { update_id: 7, callback_query: { id: "foreign-callback", from: { id: 99 }, message: { message_id: 7, chat: { id: 99, type: "private" } }, data: "th:max" } },
+    ];
+    let poll = 0;
+    const { fetch, calls } = stubFetch((url) => {
+      if (url.endsWith("/getMe")) return okGetMe;
+      if (url.endsWith("/deleteWebhook")) return { ok: true, result: true };
+      if (url.endsWith("/getUpdates")) return { ok: true, result: poll++ === 0 ? [...updates, ...callbacks] : [] };
+      if (url.endsWith("/answerCallbackQuery")) return { ok: true, result: true };
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const adapter = await createTelegramAdapter({ botToken: "TEST:token", chatId: "42" }, { fetch });
+    const commands: string[] = [];
+    const commandIds: number[] = [];
+    const callbackRecords: string[] = [];
+    const forwarded: string[] = [];
+    const pairedForwards: { text: string; messageId: number }[] = [];
+    try {
+      for (const name of ["stop", "compact", "thinking", "model"] as const) adapter.onCommand(name, (messageId) => { commands.push(name); commandIds.push(messageId); });
+      adapter.onCommandCallback((data) => callbackRecords.push(data));
+      adapter.onMessage((text) => forwarded.push(text));
+      adapter.onPairedMessage((text, messageId) => pairedForwards.push({ text, messageId }));
+      adapter.start();
+      await vi.waitFor(() => expect(callbackRecords).toEqual(["th:high"]));
+      expect(commands).toEqual(["stop", "compact", "thinking", "model"]);
+      expect(commandIds).toEqual([1, 2, 3, 4]);
+      expect(pairedForwards).toEqual([]);
+      expect(forwarded).toEqual([]);
+      expect(calls.filter((call) => call.url.endsWith("/answerCallbackQuery")).map((call) => call.body)).toEqual([{ callback_query_id: "owner-callback" }]);
+    } finally { await adapter.stop(); }
+  });
+
   it("delivers only paired-chat messages to the handler", async () => {
     const paired = {
       update_id: 1,

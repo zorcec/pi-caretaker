@@ -25,6 +25,7 @@ export interface RecordedSend {
   chat_id: unknown;
   text: string;
   reply_parameters?: { message_id?: unknown };
+  reply_markup?: unknown;
 }
 
 /** One Bot API call the mock answered, in arrival order. */
@@ -94,13 +95,13 @@ export async function startMockTelegram(): Promise<MockTelegram> {
       return;
     }
     if (method === "sendMessage") {
-      const sendBody = body as { chat_id?: unknown; text?: unknown; reply_parameters?: { message_id?: unknown } };
-      sends.push({ chat_id: sendBody.chat_id, text: String(sendBody.text ?? ""), ...(sendBody.reply_parameters === undefined ? {} : { reply_parameters: sendBody.reply_parameters }) });
+      const sendBody = body as { chat_id?: unknown; text?: unknown; reply_parameters?: { message_id?: unknown }; reply_markup?: unknown };
+      sends.push({ chat_id: sendBody.chat_id, text: String(sendBody.text ?? ""), ...(sendBody.reply_parameters === undefined ? {} : { reply_parameters: sendBody.reply_parameters }), ...(sendBody.reply_markup === undefined ? {} : { reply_markup: sendBody.reply_markup }) });
       json(res, { ok: true, result: { message_id: nextMessageId } });
       nextMessageId += 1;
       return;
     }
-    if (method === "editMessageText" || method === "sendChatAction") {
+    if (method === "answerCallbackQuery" || method === "editMessageText" || method === "sendChatAction") {
       json(res, { ok: true, result: true });
       return;
     }
