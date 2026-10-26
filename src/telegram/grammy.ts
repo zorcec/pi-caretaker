@@ -36,6 +36,27 @@ export interface TelegramTransportDeps {
 }
 
 /**
+ * Resolve the deps the factory passes to createTelegramAdapter.
+ *
+ * When Pi loads the built bundle out of process, the extension factory
+ * receives no deps object — so the e2e-local tier (tests/e2e-local/, real
+ * Pi + mocked Telegram) injects grammY's apiRoot through the
+ * PI_CARETAKER_TELEGRAM_API_ROOT env var instead. Explicit in-process deps
+ * always win; an empty or absent env value changes nothing. Test seam
+ * only — never set in production, where the default stays the real
+ * api.telegram.org.
+ */
+export function resolveTelegramDeps(
+  deps: TelegramTransportDeps | undefined,
+  env: NodeJS.ProcessEnv,
+): TelegramTransportDeps | undefined {
+  if (deps !== undefined) return deps;
+  const apiRoot = env["PI_CARETAKER_TELEGRAM_API_ROOT"];
+  if (apiRoot === undefined || apiRoot === "") return undefined;
+  return { apiRoot };
+}
+
+/**
  * Last polling/middleware failure, parsed into a displayable shape at the
  * boundary where it was caught. Callers get a message and a timestamp —
  * never a raw `unknown` they would have to narrow themselves.

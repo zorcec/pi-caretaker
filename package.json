@@ -36,6 +36,7 @@
     "test:unit": "vitest run --project unit --project guards",
     "test:e2e": "vitest run --project build --project e2e",
     "test:live": "vitest run --config vitest.live.config.ts",
+    "test:e2e-local": "vitest run --config vitest.e2e-local.config.ts",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "lint:symbols": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",

@@ -43,7 +43,7 @@ import {
 } from "./escape-hatch.js";
 import { getHealth as buildHealth, type HealthReport } from "./health.js";
 import type { TelegramAdapter } from "./telegram/index.js";
-import { createTelegramAdapter, type TelegramTransportDeps, type ManagedTelegramAdapter } from "./telegram/grammy.js";
+import { createTelegramAdapter, resolveTelegramDeps, type TelegramTransportDeps, type ManagedTelegramAdapter } from "./telegram/grammy.js";
 
 /** Extension version, reported by getHealth() and caretaker-status. */
 /** Extension version: the built package's version, injected at build time.
@@ -168,7 +168,11 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     if (config.telegramBotToken !== undefined && config.telegramChatId !== undefined) {
       try {
         const adapter: ManagedTelegramAdapter = await createTelegramAdapter(
-          { botToken: config.telegramBotToken, chatId: config.telegramChatId }, telegramDeps,
+          { botToken: config.telegramBotToken, chatId: config.telegramChatId },
+          // Out-of-process hosts (the e2e-local tier running a real Pi) load
+          // the built bundle and pass no deps, so the loopback Bot API mock
+          // arrives via env — see resolveTelegramDeps (ADR-0007).
+          resolveTelegramDeps(telegramDeps, process.env),
         );
         adapter.onMessage((text) => { pi.sendUserMessage(text, { deliverAs: "followUp" }); });
         telegram = adapter;

@@ -15,6 +15,7 @@ import {
   testEnv,
   waitForNotifies,
 } from "./setup/fake-pi.js";
+import { startMockTelegram } from "./setup/telegram-mock.js";
 
 /**
  * Pins the Pi entry wiring (ticket e443e5b4) without a Pi process.
@@ -399,6 +400,36 @@ describe("pi-caretaker extension entry", () => {
     expect(status).toBe(202);
 
     await fake.handlers.get("session_shutdown")?.({}, ctx);
+  });
+
+  it("takes the grammY apiRoot from env when the host passes no deps (out-of-process seam)", async () => {
+    // Pi loading the built bundle calls the factory with only the API —
+    // no deps object — so the e2e-local tier injects the loopback Bot API
+    // mock through PI_CARETAKER_TELEGRAM_API_ROOT (ADR-0007). Proof: getMe
+    // must hit OUR loopback mock, and the session must stay fully up.
+    const mock = await startMockTelegram();
+    try {
+      testEnv({
+        PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
+        PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+        PI_CARETAKER_TELEGRAM_API_ROOT: mock.url,
+      });
+      const fake = createFakePi();
+      piCaretaker(fake.api); // no deps — the out-of-process host shape
+      const ctx = fakeContext(fake.notifies);
+
+      await startedPort(fake, ctx);
+
+      expect(mock.calls.some((call) => call.method === "getMe")).toBe(true);
+      const disabled = fake.notifies.filter((n) =>
+        n.message.includes("Telegram disabled"),
+      );
+      expect(disabled).toEqual([]);
+
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally {
+      await mock.close();
+    }
   });
 
   it("refuses a half-configured Telegram pair without opening a socket", async () => {

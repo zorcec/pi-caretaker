@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTelegramAdapter } from "../src/telegram/grammy.js";
+import {
+  createTelegramAdapter,
+  resolveTelegramDeps,
+} from "../src/telegram/grammy.js";
 
 /**
  * Pins ADR-0007 (Telegram via grammY, configured by ENV).
@@ -224,5 +227,31 @@ describe("grammY Telegram adapter", () => {
     );
 
     await expect(adapter.stop()).resolves.toBeUndefined();
+  });
+});
+
+describe("resolveTelegramDeps (env seam for out-of-process hosts)", () => {
+  it("keeps explicit in-process deps — env never overrides injected seams", () => {
+    const deps = { apiRoot: "http://127.0.0.1:1" };
+    expect(
+      resolveTelegramDeps(deps, {
+        PI_CARETAKER_TELEGRAM_API_ROOT: "http://127.0.0.1:2",
+      }),
+    ).toBe(deps);
+  });
+
+  it("builds apiRoot from the env when the host passes no deps", () => {
+    expect(
+      resolveTelegramDeps(undefined, {
+        PI_CARETAKER_TELEGRAM_API_ROOT: "http://127.0.0.1:9",
+      }),
+    ).toEqual({ apiRoot: "http://127.0.0.1:9" });
+  });
+
+  it("treats an empty env value as absent — the default API stays untouched", () => {
+    expect(
+      resolveTelegramDeps(undefined, { PI_CARETAKER_TELEGRAM_API_ROOT: "" }),
+    ).toBeUndefined();
+    expect(resolveTelegramDeps(undefined, {})).toBeUndefined();
   });
 });

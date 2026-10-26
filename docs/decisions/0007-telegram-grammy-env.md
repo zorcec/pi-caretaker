@@ -8,6 +8,12 @@ a Pitgram integration. Configuration is two environment variables,
 both required together, neither with a default. Inbound updates are
 long-polled in-process; only messages from the paired chat id are
 forwarded, everything else is ignored, never answered.
+
+One test-only seam: when the host process loads the built bundle out of
+process (the e2e-local tier running a real Pi), the extension factory
+cannot receive in-process deps, so `PI_CARETAKER_TELEGRAM_API_ROOT`
+overrides grammY's Bot API base URL. Never set in production; explicit
+in-process deps always win; an empty or absent value changes nothing.
 ## Why
 The owner rejected Pitgram's interactive setup flow and wants env-only
 configuration with no extra service, relay, or account linking step. A
@@ -23,4 +29,6 @@ inbound set beyond the paired chat, or adding a second transport, needs a
 new ADR.
 ## Pins
 - `tests/grammy.test.ts`
+- `tests/index.test.ts`
 - `tests/e2e/telegram-mock.e2e.test.ts`
+- `tests/e2e-local/caretaker.e2e-local.test.ts`
