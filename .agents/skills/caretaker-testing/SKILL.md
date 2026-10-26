@@ -132,3 +132,44 @@ and HTTP edge (the `full → 503`, `oversized → 413`, `401-before-parse`
 paths are the ones most likely to hide). Do not chase a percentage: a
 100% suite of truthy assertions guards nothing, and gaming the number
 with `/* istanbul ignore */` or throwaway tests is a review failure.
+
+## Manual full-stack check (real Telegram, real Pi, real LLM)
+
+The one procedure that proves the whole product live. Manual tier only —
+never inside `pnpm check`/`pnpm test` (those stay hermetic). Automated
+tiers: `pnpm test:live` (real Telegram, outbound smoke) and `pnpm
+test:e2e-local` (real Pi RPC + MiMo against a **mocked** bot).
+
+Prereqs: repo-root `secrets.env` (gitignored, values never printed) with
+`PI_CARETAKER_TOKEN`, `PI_CARETAKER_TELEGRAM_BOT_TOKEN`,
+`PI_CARETAKER_TELEGRAM_CHAT_ID`; `TELEGRAM_MT_SESSION` minted once via
+the interactive login in `~/pi-manual-tests` (Python for now; gramjs
+in-repo port = task `0e3ea262`, py originals attached there as reference).
+
+1. `pnpm start` — builds, self-replaces the previous instance, port
+   preflight, health gate, pidfile. Stop: `pnpm stop`. Hop diagnostics go
+   to stderr → `pi-caretaker.log`.
+2. Send as the paired chat: from the owner's own Telegram account (its
+   chat id must equal the configured one) or via MTProto —
+   `~/pi-manual-tests/.venv/bin/python ~/pi-manual-tests/send.py "<text>"`.
+3. In the log expect, in order: `telegram received chatMatch=true …` →
+   `telegram forwarded` → `agent_end` (real model turn ran).
+   `chatMatch=false`/`telegram dropped` means the allowlist didn't match.
+4. The final answer relays back to the sender via the single notify path
+   (reply-to-sender, ADR-0003). Verify on the phone or reverse-hop:
+   `~/pi-manual-tests/.venv/bin/python ~/pi-manual-tests/read.py 4`.
+5. Health: `curl -s 127.0.0.1:8787/health` — includes telegram polling
+   status (`getLastError` surfaces polling breaks).
+
+Autonomous chat simulation without a phone: point the adapter at a
+loopback mock via `PI_CARETAKER_TELEGRAM_API_ROOT` (what the
+mocked-telegram e2e uses). The MTProto path above is the REAL proof.
+
+## What is never done here
+
+No secrets, tokens, or session strings in repo, fixtures, or logs.
+External PRs never merge without a human review (no remote CI exists).
+Vibeflow board ops go through the CLI (`vibeflow tasks …`) from the repo
+root; never the MCP server (it is rooted elsewhere). Bugs found while
+working here become Bug-type tickets **before** the fix, and the fixing
+commit references them — owner's ruling, 2026-10-26.
