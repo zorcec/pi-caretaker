@@ -137,6 +137,11 @@ release, not just etiquette.
   the fix to the ticket with a pointer to the code.
 - A fix follows §4 like any other change: biting test, red→green proof.
 
+- Vibeflow ticket ops (claim, comment, move) in this repo go through the
+  `vibeflow` CLI from the repo root — always, unless the owner says
+  otherwise for a given task. The MCP server is rooted at vibeflow-private
+  and cannot reach this store.
+
 ## Execution invariants (learned 2026-10-25 on vibeflow)
 
 - **One deliverable per lane brief.** A brief with six deliverables burned
