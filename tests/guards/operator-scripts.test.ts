@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  buildRpcBootInput,
   parseSecretsEnv,
   resolveStartConfig,
+  waitForHealth,
 } from "../../scripts/start.mjs";
 import { parsePidFile, resolveStopPlan } from "../../scripts/stop.mjs";
 import {
@@ -97,12 +99,64 @@ describe("resolveStartConfig", () => {
     expect(plan).toEqual({
       ok: true,
       command: "pi",
-      args: ["--extension", "./dist/index.js"],
+      args: [
+        "--mode",
+        "rpc",
+        "--name",
+        "caretaker",
+        "--extension",
+        "./dist/index.js",
+      ],
       foreground: false,
       detached: true,
       logFile: expect.stringMatching(/pi-caretaker\.log$/),
       pidFile: expect.stringMatching(/pi-caretaker\.pid$/),
+      healthUrl: "http://127.0.0.1:8787/health",
     });
+  });
+
+  it("pins the exact RPC boot lines fed to Pi stdin", () => {
+    expect(buildRpcBootInput()).toEqual(['{"type":"new_session"}']);
+  });
+
+  it("waits for the listener: immediate ok, retry, and timeout", async () => {
+    let now = 0;
+    const sleep = async (ms: number): Promise<void> => {
+      now += ms;
+    };
+
+    await expect(
+      waitForHealth("http://x/health", {
+        fetch: (async () => ({ ok: true })) as unknown as typeof fetch,
+        now: () => now,
+        sleep,
+      }),
+    ).resolves.toBe(true);
+
+    let calls = 0;
+    await expect(
+      waitForHealth("http://x/health", {
+        fetch: (async () => {
+          calls += 1;
+          if (calls < 3) throw new Error("down");
+          return { ok: true };
+        }) as unknown as typeof fetch,
+        now: () => now,
+        sleep,
+        timeoutMs: 10_000,
+      }),
+    ).resolves.toBe(true);
+
+    await expect(
+      waitForHealth("http://x/health", {
+        fetch: (async () => {
+          throw new Error("down");
+        }) as unknown as typeof fetch,
+        now: () => now,
+        sleep,
+        timeoutMs: 500,
+      }),
+    ).resolves.toBe(false);
   });
 
   it("resolves attached mode explicitly", () => {
