@@ -142,6 +142,13 @@ release, not just etiquette.
   otherwise for a given task. The MCP server is rooted at vibeflow-private
   and cannot reach this store.
 
+## 10. Anything bigger gets a task first
+
+- Work that is more than a trivial fix — multi-file, feature-sized, or
+  anything you would brief to a worker — gets a vibeflow task created and
+  claimed BEFORE starting, even on a direct owner order. Small fixes and
+  §9's bug rule stay exempt.
+
 ## Execution invariants (learned 2026-10-25 on vibeflow)
 
 - **One deliverable per lane brief.** A brief with six deliverables burned
