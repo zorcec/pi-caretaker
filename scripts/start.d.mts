@@ -29,6 +29,18 @@ export interface WaitForHealthDeps {
   timeoutMs?: number;
 }
 
+export interface PortProbeSocket {
+  once(event: string, listener: (...args: unknown[]) => void): void;
+  setTimeout(timeoutMs: number, callback: () => void): void;
+  destroy(): void;
+}
+
+export interface PortIsFreeDeps {
+  connect?: (options: { host: string; port: number }) => PortProbeSocket;
+  timeoutMs?: number;
+  retryDelayMs?: number;
+}
+
 export function parseSecretsEnv(text: string): SecretsVars;
 
 export function resolveStartConfig(options: {
@@ -40,6 +52,12 @@ export function resolveStartConfig(options: {
 }): StartPlan;
 
 export function buildRpcBootInput(): string[];
+
+export function portIsFree(
+  host: string,
+  port: number,
+  deps?: PortIsFreeDeps,
+): Promise<boolean>;
 
 export type SupervisorLine =
   | { kind: "pid"; pid: number }

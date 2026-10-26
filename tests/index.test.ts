@@ -189,6 +189,66 @@ describe("pi-caretaker extension entry", () => {
     expect(fake.notifies[0]?.message).toContain(EXTENSION_VERSION);
   });
 
+  it("caretaker-status reports managed Telegram inbound count and polling errors", async () => {
+    testEnv({
+      PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:status-token",
+      PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+    });
+    let updates = 0;
+    const { fetch } = stubTelegramFetch((url) => {
+      if (url.endsWith("/getMe")) return telegramGetMe;
+      if (url.endsWith("/deleteWebhook")) return { ok: true, result: true };
+      if (url.endsWith("/getUpdates")) {
+        updates += 1;
+        if (updates === 1) {
+          return {
+            ok: true,
+            result: [
+              {
+                update_id: 1,
+                message: {
+                  message_id: 1,
+                  chat: { id: 42, type: "private" },
+                  text: "status inbound",
+                  date: 1,
+                },
+              },
+            ],
+          };
+        }
+        return new Error("status poll failure for TEST:status-token chat 42");
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const fake = createFakePi();
+    piCaretaker(fake.api, { fetch });
+    const ctx = fakeContext(fake.notifies);
+    await fake.handlers.get("session_start")?.({}, ctx);
+
+    const status = fake.commands.get("caretaker-status");
+    if (status === undefined) throw new Error("caretaker-status not registered");
+    const deadline = Date.now() + 3000;
+    let message = "";
+    while (!message.includes("status poll failure") && Date.now() < deadline) {
+      await status.handler("", ctx as never);
+      message = fake.notifies.at(-1)?.message ?? "";
+      if (!message.includes("status poll failure")) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+
+    expect(fake.sent.filter((turn) => turn.content === "status inbound")).toHaveLength(1);
+    expect(message).toContain("inboundMessageCount: 1");
+    expect(message).toContain("telegramLastError: status poll failure for [REDACTED] chat [REDACTED]");
+    expect(message).toMatch(/status poll failure.* at \d{4}-\d{2}-\d{2}T/);
+    const errorLine = message.split("\n").find((line) => line.startsWith("telegramLastError:")) ?? "";
+    expect(errorLine).not.toContain("status-token");
+    expect(errorLine).not.toContain("chat 42");
+    expect(fake.notifies.at(-1)?.type).toBe("error");
+
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
+  });
+
   it("caretaker_notify without a transport reports not-sent instead of failing", async () => {
     const fake = createFakePi();
     piCaretaker(fake.api);

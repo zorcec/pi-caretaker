@@ -6,6 +6,7 @@ import {
   buildRpcBootInput,
   parseSecretsEnv,
   parseSupervisorLine,
+  portIsFree,
   resolveStartConfig,
   waitForFirstLine,
   waitForHealth,
@@ -125,6 +126,54 @@ describe("supervisor protocol", () => {
     await expect(pending).resolves.toBeNull();
     expect(timerCleared).toBe("timer-handle");
     expect(stream.listenerCount("data")).toBe(0);
+  });
+});
+
+describe("portIsFree", () => {
+  it("reports an accepting listener as busy without retrying", async () => {
+    let calls = 0;
+    const connect = (options: { host: string; port: number }) => {
+      expect(options).toEqual({ host: "127.0.0.1", port: 8787 });
+      calls += 1;
+      const socket = new EventEmitter() as EventEmitter & {
+        setTimeout: (timeoutMs: number, callback: () => void) => void;
+        destroy: () => void;
+      };
+      socket.setTimeout = (timeoutMs) => {
+        expect(timeoutMs).toBe(500);
+      };
+      socket.destroy = () => undefined;
+      queueMicrotask(() => socket.emit("connect"));
+      return socket;
+    };
+
+    await expect(
+      portIsFree("127.0.0.1", 8787, { connect, retryDelayMs: 0 }),
+    ).resolves.toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it("confirms a refused port with one retry", async () => {
+    let calls = 0;
+    const connect = (options: { host: string; port: number }) => {
+      expect(options).toEqual({ host: "127.0.0.1", port: 8787 });
+      calls += 1;
+      const socket = new EventEmitter() as EventEmitter & {
+        setTimeout: (timeoutMs: number, callback: () => void) => void;
+        destroy: () => void;
+      };
+      socket.setTimeout = (timeoutMs) => {
+        expect(timeoutMs).toBe(500);
+      };
+      socket.destroy = () => undefined;
+      queueMicrotask(() => socket.emit("error", new Error("ECONNREFUSED")));
+      return socket;
+    };
+
+    await expect(
+      portIsFree("127.0.0.1", 8787, { connect, retryDelayMs: 0 }),
+    ).resolves.toBe(true);
+    expect(calls).toBe(2);
   });
 });
 
@@ -366,6 +415,34 @@ describe("operator CLIs as child processes", () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("PI_CARETAKER_TOKEN");
     expect(result.stderr).toContain("openssl rand -hex 24");
+  });
+
+  it("start.mjs fails before spawning or health-checking when the listener port is busy", async () => {
+    const server = await startLoopbackServer({
+      token: "unused-by-port-probe",
+      mode: "ok-202",
+    });
+    try {
+      const fixture = scriptFixture();
+      fixture.write("dist/index.js", "// fixture bundle\n");
+      const port = new URL(server.url).port;
+      const result = fixture.runScript("scripts/start.mjs", {
+        env: {
+          PI_CARETAKER_TOKEN: "test-token",
+          PI_CARETAKER_HOST: "127.0.0.1",
+          PI_CARETAKER_PORT: port,
+        },
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`Listener already running at 127.0.0.1:${port}`);
+      expect(result.stderr).toContain("pnpm stop");
+      expect(result.stderr).toContain("pi-caretaker.pid");
+      expect(server.requests).toEqual([]);
+      expect(fixture.exists("pi-caretaker.pid")).toBe(false);
+    } finally {
+      await server.close();
+    }
   });
 
   it("send-alert.mjs refuses without a token and never touches the network", () => {

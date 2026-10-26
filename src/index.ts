@@ -109,6 +109,8 @@ export interface CaretakerControls {
 export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTransportDeps): CaretakerControls {
   let session: CaretakerSession | undefined;
   let telegram: NotifyTransport | undefined;
+  let managedTelegram: ManagedTelegramAdapter | undefined;
+  let inboundMessageCount = 0;
   let stopped = false;
 
   /**
@@ -163,6 +165,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     });
     const pump = startDelivery(queue, deliver);
     const address = `http://${config.host}:${(server.address() as { port: number }).port}`;
+    inboundMessageCount = 0;
     session = { config, queue, server, pump, address };
     stopped = false;
     if (config.telegramBotToken !== undefined && config.telegramChatId !== undefined) {
@@ -174,8 +177,12 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
           // arrives via env — see resolveTelegramDeps (ADR-0007).
           resolveTelegramDeps(telegramDeps, process.env),
         );
-        adapter.onMessage((text) => { pi.sendUserMessage(text, { deliverAs: "followUp" }); });
+        adapter.onMessage((text) => {
+          inboundMessageCount += 1;
+          pi.sendUserMessage(text, { deliverAs: "followUp" });
+        });
         telegram = adapter;
+        managedTelegram = adapter;
         adapter.start();
       } catch (error) {
         ctx.ui.notify(`pi-caretaker Telegram disabled: ${error instanceof Error ? error.message : String(error)}`, "error");
@@ -190,6 +197,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     session = undefined;
     const activeTelegram = telegram as (NotifyTransport & { stop?: () => Promise<void> }) | undefined;
     telegram = undefined;
+    managedTelegram = undefined;
     await activeTelegram?.stop?.().catch(() => undefined);
     if (active === undefined) return;
     active.pump.stop();
@@ -204,6 +212,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   const controls: CaretakerControls = {
     attachTelegram(transport: NotifyTransport | undefined): void {
       telegram = transport;
+      managedTelegram = undefined;
     },
     getSession(): SessionSnapshot | undefined {
       if (session === undefined) return undefined;
@@ -239,13 +248,30 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
         );
         return;
       }
+      const lastError = managedTelegram?.getLastError();
+      let lastErrorMessage = lastError?.message;
+      if (lastErrorMessage !== undefined) {
+        for (const secret of [session.config.telegramBotToken, session.config.telegramChatId]) {
+          if (secret !== undefined) {
+            lastErrorMessage = lastErrorMessage.replaceAll(secret, "[REDACTED]");
+          }
+        }
+      }
+      const managedTelegramStatus =
+        managedTelegram === undefined
+          ? []
+          : [
+              `inboundMessageCount: ${inboundMessageCount}`,
+              `telegramLastError: ${lastError === undefined ? "null" : `${lastErrorMessage} at ${lastError.at}`}`,
+            ];
       ctx.ui.notify(
         [
           `pi-caretaker ${EXTENSION_VERSION}: listening on ${session.address}`,
           `queue: ${session.queue.size}/${session.queue.capacity} events held`,
           `telegram: ${telegram !== undefined ? "configured" : "not configured — triage only"}`,
+          ...managedTelegramStatus,
         ].join("\n"),
-        "info",
+        lastError === undefined ? "info" : "error",
       );
     },
   });

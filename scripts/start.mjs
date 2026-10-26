@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { connect as netConnect } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -63,6 +64,38 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
     // immediately disables itself (MISSING_WEBHOOK_TOKEN).
     env: { ...fileVars, ...env },
   };
+}
+
+/**
+ * Probe whether a TCP listener accepts connections at host:port. A failed
+ * connect is retried once so a transient local socket error is not treated
+ * as proof that the port is free.
+ */
+export async function portIsFree(
+  host,
+  port,
+  { connect = netConnect, timeoutMs = 500, retryDelayMs = 50 } = {},
+) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const accepting = await new Promise((resolve) => {
+      const socket = connect({ host, port });
+      let settled = false;
+      const finish = (isFree) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve(isFree);
+      };
+      socket.setTimeout(timeoutMs, () => finish(true));
+      socket.once("connect", () => finish(false));
+      socket.once("error", () => finish(true));
+    });
+    if (!accepting) return false;
+    if (attempt === 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+  return true;
 }
 
 /**
@@ -197,6 +230,16 @@ async function main() {
     child.on("exit", (code, signal) => {
       process.exitCode = code ?? (signal ? 1 : 0);
     });
+    return;
+  }
+  const listenerUrl = new URL(plan.healthUrl);
+  const listenerHost = listenerUrl.hostname.replace(/^\[|\]$/g, "");
+  const listenerPort = Number(listenerUrl.port || plan.env.PI_CARETAKER_PORT || "8787");
+  if (!(await portIsFree(listenerHost, listenerPort))) {
+    console.error(
+      `Listener already running at ${listenerHost}:${listenerPort}. Use pnpm stop or check ${plan.pidFile} for a stale pidfile.`,
+    );
+    process.exitCode = 1;
     return;
   }
   const { openSync } = await import("node:fs");
