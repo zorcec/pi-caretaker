@@ -36,7 +36,7 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
         "PI_CARETAKER_TOKEN is required. Set it in secrets.env or the environment (generate one with: openssl rand -hex 24). Never share this token.",
     };
   }
-  const thinking = env.PI_CARETAKER_THINKING ?? "minimal";
+  const thinking = env.PI_CARETAKER_THINKING ?? "low";
   const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   if (!thinkingLevels.includes(thinking)) {
     return {

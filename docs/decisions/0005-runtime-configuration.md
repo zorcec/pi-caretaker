@@ -8,7 +8,7 @@ The caretaker reads six environment variables, validated at startup on
 positive integer), plus the optional Telegram pair
 `PI_CARETAKER_TELEGRAM_BOT_TOKEN` / `PI_CARETAKER_TELEGRAM_CHAT_ID`
 (required together, no defaults; absent pair means triage-only mode), and
-`PI_CARETAKER_THINKING` (default `minimal`; one of off, minimal, low,
+`PI_CARETAKER_THINKING` (default `low`; one of off, minimal, low,
 medium, high, xhigh, max).
 Invalid values fail loudly with `MISSING_WEBHOOK_TOKEN`, `INVALID_PORT`,
 `INVALID_QUEUE_CAPACITY`, `MISSING_TELEGRAM_BOT_TOKEN`, or

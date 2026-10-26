@@ -305,7 +305,7 @@ describe("resolveStartConfig", () => {
         "--extension",
         "./dist/index.js",
         "--thinking",
-        "minimal",
+        "low",
       ],
       foreground: false,
       detached: true,
@@ -367,7 +367,7 @@ describe("resolveStartConfig", () => {
     expect(plan).toMatchObject({
       ok: true,
       command: "pi",
-      args: ["--name", "caretaker", "--extension", "./dist/index.js", "--thinking", "minimal"],
+      args: ["--name", "caretaker", "--extension", "./dist/index.js", "--thinking", "low"],
       foreground: true,
       detached: false,
       logFile: "/repo/pi-caretaker.log",
