@@ -127,8 +127,73 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   // before_agent_start/agent_end expose no run id. Keep forwarded prompts in
   // FIFO order and match exact user prompt text at turn start; ADR-0006's
   // single-active-turn guarantee keeps this marker paired through agent_end.
-  let pendingInboundTelegramMessages: string[] = [];
+  let pendingInboundTelegramMessages: { text: string; messageId: number }[] = [];
   let relayCurrentTurn = false;
+  let relayInboundMessageId: number | undefined;
+  let livenessTimers = new Set<ReturnType<typeof setTimeout>>();
+  let typingTimer: ReturnType<typeof setInterval> | undefined;
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
+  let statusThrottleTimer: ReturnType<typeof setTimeout> | undefined;
+  let statusMessageId = 0;
+  let relayStartedAt = 0;
+  let toolCallCount = 0;
+  let lastToolName: string | undefined;
+  let lastStatusText = "";
+  let lastStatusEditAt = 0;
+  const clearLiveness = (): void => {
+    if (typingTimer !== undefined) clearInterval(typingTimer);
+    for (const timer of livenessTimers) clearTimeout(timer);
+    livenessTimers.clear();
+    typingTimer = undefined;
+    statusTimer = undefined;
+    statusThrottleTimer = undefined;
+  };
+  const elapsedText = (): string => {
+    const seconds = Math.floor((Date.now() - relayStartedAt) / 1000);
+    return seconds >= 60 ? `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
+  };
+  const statusText = (): string => `working… ${toolCallCount} calls${lastToolName === undefined ? "" : ` · last: ${lastToolName}`} · ${elapsedText()}`;
+  const scheduleEdit = (): void => {
+    if (managedTelegram === undefined || statusMessageId === 0 || !relayCurrentTurn) return;
+    const text = statusText();
+    if (text === lastStatusText) return;
+    const delay = Math.max(0, 8000 - (Date.now() - lastStatusEditAt));
+    if (statusThrottleTimer !== undefined) return;
+    statusThrottleTimer = setTimeout(() => {
+      statusThrottleTimer = undefined;
+      if (!relayCurrentTurn || statusMessageId === 0) return;
+      const next = statusText();
+      if (next === lastStatusText) return;
+      lastStatusText = next;
+      lastStatusEditAt = Date.now();
+      void managedTelegram?.editMessageText(statusMessageId, next).catch(() => undefined);
+    }, delay);
+    livenessTimers.add(statusThrottleTimer);
+  };
+  const startLiveness = (messageId: number): void => {
+    relayStartedAt = Date.now();
+    toolCallCount = 0;
+    lastToolName = undefined;
+    statusMessageId = 0;
+    lastStatusText = "";
+    lastStatusEditAt = 0;
+    const managed = managedTelegram;
+    if (managed === undefined) return;
+    void managed.react(messageId, "👀").catch(() => undefined);
+    void managed.sendChatAction("typing").catch(() => undefined);
+    typingTimer = setInterval(() => { void managed.sendChatAction("typing").catch(() => undefined); }, 5000);
+    statusTimer = setTimeout(() => {
+      statusTimer = undefined;
+      void managed.sendMessage("working…").then((id) => {
+        if (id === 0 || !relayCurrentTurn) return;
+        statusMessageId = id;
+        lastStatusText = "working…";
+        lastStatusEditAt = Date.now();
+        scheduleEdit();
+      }).catch(() => undefined);
+    }, 3000);
+    livenessTimers.add(statusTimer);
+  };
   let stopped = false;
   let generation = 0;
 
@@ -137,6 +202,22 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
    * (ADR-0006): the single-flight pump submits at most one turn, and
    * followUp delivery lets Pi order it against a running turn.
    */
+  const forwardPairedMessage = (text: string, messageId: number): void => {
+    inboundMessageCount += 1;
+    try {
+      pi.sendUserMessage(text, { deliverAs: "followUp" });
+      pendingInboundTelegramMessages.push({ text, messageId });
+      console.error("[pi-caretaker] telegram forwarded");
+    } catch (error) {
+      console.error(
+        `[pi-caretaker] telegram sendUserMessage-failed error=${sanitizeTelegramLogError(
+          error,
+          [session?.config.telegramBotToken, session?.config.telegramChatId, text],
+        )}`,
+      );
+    }
+  };
+
   async function deliver(event: { body: EventEnvelope }): Promise<void> {
     const envelope = event.body;
     const match = matchEscapeHatch(envelope);
@@ -213,21 +294,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
           }
           return;
         }
-        adapter.onMessage((text) => {
-          inboundMessageCount += 1;
-          try {
-            pi.sendUserMessage(text, { deliverAs: "followUp" });
-            pendingInboundTelegramMessages.push(text);
-            console.error("[pi-caretaker] telegram forwarded");
-          } catch (error) {
-            console.error(
-              `[pi-caretaker] telegram sendUserMessage-failed error=${sanitizeTelegramLogError(
-                error,
-                [config.telegramBotToken, config.telegramChatId, text],
-              )}`,
-            );
-          }
-        });
+        adapter.onPairedMessage(forwardPairedMessage);
         telegram = adapter;
         managedTelegram = adapter;
         adapter.start();
@@ -243,6 +310,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     stopped = true;
     pendingInboundTelegramMessages = [];
     relayCurrentTurn = false;
+    clearLiveness();
     const active = session;
     session = undefined;
     const activeTelegram = telegram as (NotifyTransport & { stop?: () => Promise<void> }) | undefined;
@@ -262,7 +330,16 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   const controls: CaretakerControls = {
     attachTelegram(transport: NotifyTransport | undefined): void {
       telegram = transport;
-      managedTelegram = undefined;
+      const candidate = transport as (NotifyTransport & Partial<ManagedTelegramAdapter>) | undefined;
+      managedTelegram = candidate !== undefined &&
+        typeof candidate.react === "function" &&
+        typeof candidate.sendChatAction === "function" &&
+        typeof candidate.sendMessage === "function" &&
+        typeof candidate.editMessageText === "function" &&
+        typeof candidate.onPairedMessage === "function"
+        ? candidate as ManagedTelegramAdapter
+        : undefined;
+      managedTelegram?.onPairedMessage(forwardPairedMessage);
     },
     getSession(): SessionSnapshot | undefined {
       if (session === undefined) return undefined;
@@ -291,15 +368,34 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   pi.on("before_agent_start", (event) => {
     relayCurrentTurn = false;
     if (event.messageType !== "user") return;
-    const pendingIndex = pendingInboundTelegramMessages.indexOf(event.prompt);
+    const pendingIndex = pendingInboundTelegramMessages.findIndex((message) => message.text === event.prompt);
     if (pendingIndex < 0) return;
-    pendingInboundTelegramMessages.splice(pendingIndex, 1);
+    const [inbound] = pendingInboundTelegramMessages.splice(pendingIndex, 1);
+    if (inbound === undefined) return;
+    relayInboundMessageId = inbound.messageId;
     relayCurrentTurn = true;
+    try { startLiveness(inbound.messageId); } catch { /* notification-only */ }
+  });
+
+  pi.on("tool_execution_start", (event) => {
+    try {
+      if (!relayCurrentTurn) return;
+      toolCallCount += 1;
+      lastToolName = event.toolName;
+      scheduleEdit();
+    } catch { /* notification-only */ }
   });
 
   pi.on("agent_end", async (event) => {
     if (!relayCurrentTurn) return;
     relayCurrentTurn = false;
+    clearLiveness();
+    const activeStatusId = statusMessageId;
+    statusMessageId = 0;
+    const inboundMessageId = relayInboundMessageId;
+    relayInboundMessageId = undefined;
+    const duration = elapsedText();
+    if (activeStatusId !== 0) void managedTelegram?.editMessageText(activeStatusId, `done · ${duration}`).catch(() => undefined);
 
     const finalAssistant = [...event.messages]
       .reverse()
@@ -313,7 +409,11 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
 
     const reply = Array.from(answer).slice(0, TELEGRAM_MESSAGE_LIMIT).join("");
     try {
-      await telegram.notify(reply);
+      if (managedTelegram !== undefined && inboundMessageId !== undefined) {
+        await managedTelegram.sendMessage(reply, inboundMessageId);
+      } else {
+        await telegram.notify(reply);
+      }
     } catch (error) {
       console.error(
         `[pi-caretaker] telegram notify-failed error=${sanitizeTelegramLogError(

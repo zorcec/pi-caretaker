@@ -10,7 +10,7 @@ owner-originated replies appear.
 With two notifiers posting to the owner's chat, silence can never be proven,
 and "it only pings when it matters" becomes unenforceable.
 ## Consequence
-Any second Telegram-sending path requires amending or superseding this ADR. Fixed protocol acknowledgments for paired-chat non-text updates are adapter-owned and are not model output or an expansion of the notify path.
+Any second Telegram-sending path requires amending or superseding this ADR. Fixed protocol acknowledgments for paired-chat non-text updates, including receipt reactions, typing indicators, and status edits, are adapter-owned signals, not model output or an expansion of the notify path.
 Paired-chat inbound replies use the same `notify(text)` sender; background,
 webhook, and escape-hatch turns remain silent unless they deliberately notify.
 Pitgram was rejected by owner decision (see ADR-0007); grammY keeps this

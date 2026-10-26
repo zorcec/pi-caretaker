@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import piCaretaker from "../../src/index.js";
 import {
   createFakePi,
@@ -30,6 +30,57 @@ afterEach(() => {
 });
 
 describe("mocked Telegram e2e (loopback Bot API)", () => {
+  it("sends owner liveness and quoted answer over real HTTP while webhook turns stay silent", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi();
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies);
+      const port = await startedPort(fake, ctx);
+
+      await postEvent(port, { message: "background" });
+      await waitForTurns(fake, 1);
+      await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: fake.sent[0]?.content }, ctx);
+      await fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text: "webhook result" }] }] }, ctx);
+      expect(mock.calls.filter((call) => ["setMessageReaction", "sendChatAction", "editMessageText"].includes(call.method))).toEqual([]);
+
+      mock.enqueueUpdates([{ update_id: 2, message: { message_id: 41, chat: { id: 42, type: "private" }, text: "owner prompt", date: 1 } }]);
+      const deadline = Date.now() + 3000;
+      while (!fake.sent.some((turn) => turn.content === "owner prompt") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "owner prompt" }, ctx);
+      await fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text: "owner answer" }] }] }, ctx);
+      const answerDeadline = Date.now() + 3000;
+      while (!mock.sends.some((send) => send.text === "owner answer") && Date.now() < answerDeadline) await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(mock.calls.some((call) => call.method === "setMessageReaction" && call.body?.message_id === 41)).toBe(true);
+      expect(mock.calls.some((call) => call.method === "sendChatAction" && call.body?.action === "typing")).toBe(true);
+      expect(mock.sends.find((send) => send.text === "owner answer")?.reply_parameters).toEqual({ message_id: 41 });
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally { await mock.close(); }
+  });
+
+  it("swallows an HTTP 400 receipt reaction and still relays the owner answer", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { lines.push(args.join(" ")); });
+    const mock = await startMockTelegram();
+    try {
+      mock.failNextReaction();
+      const fake = createFakePi(); piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies); await startedPort(fake, ctx);
+      mock.enqueueUpdates([{ update_id: 1, message: { message_id: 55, chat: { id: 42, type: "private" }, text: "owner prompt", date: 1 } }]);
+      const deadline = Date.now() + 3000;
+      while (!fake.sent.some((turn) => turn.content === "owner prompt") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "owner prompt" }, ctx);
+      await expect(fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text: "answer survives" }] }] }, ctx)).resolves.toBeUndefined();
+      const answerDeadline = Date.now() + 3000;
+      while (!mock.sends.some((send) => send.text === "answer survives") && Date.now() < answerDeadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(mock.sends.some((send) => send.text === "answer survives" && send.reply_parameters?.message_id === 55)).toBe(true);
+      expect(lines.some((line) => line.includes("liveness-reaction-failed") && line.includes("400"))).toBe(true);
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally { spy.mockRestore(); await mock.close(); }
+  });
   it("answers a paired-chat message in-session and notifies a must-notify event over real HTTP", async () => {
     testEnv({
       PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",

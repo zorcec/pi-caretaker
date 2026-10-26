@@ -116,6 +116,23 @@ describe("grammY Telegram adapter", () => {
     expect(sends[0]?.body).toMatchObject({ chat_id: "42", text: "host dark" });
   });
 
+  it("edits a status message through the managed transport", async () => {
+    const { fetch, calls } = stubFetch((url) => {
+      if (url.endsWith("/getMe")) return okGetMe;
+      if (url.endsWith("/editMessageText")) return { ok: true, result: true };
+      if (url.endsWith("/getUpdates")) return { ok: true, result: [] };
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const adapter = await createTelegramAdapter({ botToken: "TEST:token", chatId: "42" }, { fetch });
+    try {
+      await adapter.editMessageText(37, "working… 1 calls · last: bash · 8s");
+    } finally {
+      await adapter.stop();
+    }
+    const edit = calls.find((call) => call.url.endsWith("/editMessageText"));
+    expect(edit?.body).toMatchObject({ chat_id: "42", message_id: 37, text: "working… 1 calls · last: bash · 8s" });
+  });
+
   it("propagates send failures instead of claiming delivery", async () => {
     const { fetch } = stubFetch((url) => {
       if (url.endsWith("/getMe")) return okGetMe;

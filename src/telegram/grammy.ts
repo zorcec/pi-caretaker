@@ -74,6 +74,11 @@ function describeError(error: unknown): TelegramPollingIssue {
 }
 
 export interface ManagedTelegramAdapter extends TelegramAdapter {
+  onPairedMessage(handler: (text: string, messageId: number) => void): void;
+  react(messageId: number, emoji: "👀"): Promise<void>;
+  sendChatAction(action: "typing"): Promise<void>;
+  sendMessage(text: string, replyToMessageId?: number): Promise<number>;
+  editMessageText(messageId: number, text: string): Promise<void>;
   /** Begin long polling (idempotent — a running bot ignores repeats). */
   start(): void;
   /** Stop polling and wait for the runner to settle. */
@@ -118,6 +123,13 @@ export async function createTelegramAdapter(
   await bot.api.getMe();
 
   const handlers = new Set<TelegramMessageHandler>();
+  const pairedHandlers = new Set<(text: string, messageId: number) => void>();
+  const liveness = async (label: string, operation: () => Promise<unknown>): Promise<unknown> => {
+    try { return await operation(); } catch (error) {
+      console.error(`[pi-caretaker] telegram liveness-${label}-failed error=${String(error).replace(/[\\r\\n]+/g, " ").replace(/\\b\\d{6,}:[A-Za-z0-9_-]{20,}\\b/g, "[REDACTED]")}`);
+      return undefined;
+    }
+  };
   const nonTextAcknowledgment = "pi-caretaker accepts text messages only — send text.";
   bot.on("message", async (ctx) => {
     const chatMatch = String(ctx.chat?.id) === config.chatId;
@@ -140,9 +152,10 @@ export async function createTelegramAdapter(
       }
       return;
     }
-    for (const handler of [...handlers]) {
-      handler(text);
+    if (typeof ctx.message.message_id === "number") {
+      for (const handler of [...pairedHandlers]) handler(text, ctx.message.message_id);
     }
+    for (const handler of [...handlers]) handler(text);
   });
   bot.catch((err) => {
     lastError = describeError(err);
@@ -151,9 +164,15 @@ export async function createTelegramAdapter(
     async notify(text: string): Promise<void> {
       await bot.api.sendMessage(config.chatId, text);
     },
-    onMessage(handler: TelegramMessageHandler): void {
-      handlers.add(handler);
+    onMessage(handler: TelegramMessageHandler): void { handlers.add(handler); },
+    onPairedMessage(handler): void { pairedHandlers.add(handler); },
+    async react(messageId, emoji): Promise<void> { await liveness("reaction", () => bot.api.setMessageReaction(config.chatId, messageId, [{ type: "emoji", emoji }])); },
+    async sendChatAction(action): Promise<void> { await liveness("typing", () => bot.api.sendChatAction(config.chatId, action)); },
+    async sendMessage(text, replyToMessageId): Promise<number> {
+      const result = await liveness("send", () => bot.api.sendMessage(config.chatId, text, replyToMessageId === undefined ? {} : { reply_parameters: { message_id: replyToMessageId } }));
+      return typeof result === "object" && result !== null && "message_id" in result ? Number(result.message_id) : 0;
     },
+    async editMessageText(messageId, text): Promise<void> { await liveness("edit", () => bot.api.editMessageText(config.chatId, messageId, text)); },
     start(): void {
       void bot.start().catch((error: unknown) => {
         lastError = describeError(error);

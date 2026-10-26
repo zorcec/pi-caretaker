@@ -34,6 +34,116 @@ afterEach(() => {
 });
 
 describe("pi-caretaker extension entry", () => {
+  function attachManaged(fake: ReturnType<typeof createFakePi>) {
+    const calls: { type: string; args: unknown[] }[] = [];
+    let inbound: ((text: string, messageId: number) => void) | undefined;
+    const managed = {
+      notify: vi.fn(async (...args: unknown[]) => { calls.push({ type: "notify", args }); }),
+      onMessage: vi.fn(),
+      onPairedMessage: vi.fn((handler: (text: string, messageId: number) => void) => { inbound = handler; }),
+      react: vi.fn(async (...args: unknown[]) => { calls.push({ type: "react", args }); }),
+      sendChatAction: vi.fn(async (...args: unknown[]) => { calls.push({ type: "typing", args }); }),
+      sendMessage: vi.fn(async (...args: unknown[]) => {
+        calls.push({ type: "send", args });
+        return args[0] === "working…" ? 72 : 0;
+      }),
+      editMessageText: vi.fn(async (...args: unknown[]) => { calls.push({ type: "edit", args }); }),
+    };
+    const controls = piCaretaker(fake.api);
+    controls.attachTelegram(managed);
+    return { calls, managed, inbound: (text: string, id: number): void => inbound?.(text, id), controls };
+  }
+
+  async function beginRelay(fake: ReturnType<typeof createFakePi>, attached: ReturnType<typeof attachManaged>, text = "prompt", id = 29): Promise<void> {
+    attached.inbound(text, id);
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: text }, fakeContext(fake.notifies));
+  }
+
+  const assistantEnd = (fake: ReturnType<typeof createFakePi>, text = "answer") =>
+    fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text }] }] }, fakeContext(fake.notifies));
+
+  it("fast relay shows receipt and typing but no status message", async () => {
+    vi.useFakeTimers();
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached);
+    expect(attached.managed.react).toHaveBeenCalledWith(29, "👀");
+    expect(attached.managed.sendChatAction).toHaveBeenCalledTimes(1);
+    await assistantEnd(fake);
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(attached.managed.sendMessage.mock.calls.filter(([text]) => text === "working…")).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it("slow relay throttles tool status edits and ends with a done edit", async () => {
+    vi.useFakeTimers();
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(attached.managed.sendMessage).toHaveBeenCalledWith("working…");
+    await fake.handlers.get("tool_execution_start")?.({ toolName: "bash" }, fakeContext(fake.notifies));
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(attached.managed.editMessageText).toHaveBeenCalledWith(72, expect.stringContaining("1 calls · last: bash"));
+    const editCount = attached.managed.editMessageText.mock.calls.length;
+    await fake.handlers.get("tool_execution_start")?.({ toolName: "read" }, fakeContext(fake.notifies));
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(attached.managed.editMessageText).toHaveBeenCalledTimes(editCount);
+    await assistantEnd(fake);
+    expect(attached.managed.editMessageText).toHaveBeenLastCalledWith(72, expect.stringMatching(/^done · /));
+    vi.useRealTimers();
+  });
+
+  it("quotes the inbound id on the final answer through managed sendMessage", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "quote me", 81);
+    await assistantEnd(fake, "quoted answer");
+    expect(attached.managed.sendMessage).toHaveBeenCalledWith("quoted answer", 81);
+    expect(attached.managed.notify).not.toHaveBeenCalled();
+  });
+
+  it("does not edit when the status send returns zero", async () => {
+    vi.useFakeTimers();
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    attached.managed.sendMessage.mockResolvedValue(0);
+    await beginRelay(fake, attached);
+    await vi.advanceTimersByTimeAsync(3000);
+    await fake.handlers.get("tool_execution_start")?.({ toolName: "bash" }, fakeContext(fake.notifies));
+    await vi.advanceTimersByTimeAsync(9000);
+    await assistantEnd(fake);
+    expect(attached.managed.editMessageText).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("uses notify fallback without liveness after replacing a managed transport", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const notify = vi.fn(async () => undefined);
+    attached.inbound("fallback", 12);
+    attached.controls.attachTelegram({ notify });
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "fallback" }, fakeContext(fake.notifies));
+    await assistantEnd(fake, "fallback answer");
+    expect(notify).toHaveBeenCalledWith("fallback answer");
+    expect(attached.managed.react).not.toHaveBeenCalled();
+    expect(attached.managed.sendChatAction).not.toHaveBeenCalled();
+    expect(attached.managed.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("forwards one paired delivery once and does not register onMessage", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    attached.inbound("once", 9);
+    expect(fake.sent).toHaveLength(1);
+    expect(attached.managed.onPairedMessage).toHaveBeenCalledTimes(1);
+    expect(attached.managed.onMessage).not.toHaveBeenCalled();
+  });
+
+  it("clears typing and delayed status timers when stopped mid-turn", async () => {
+    vi.useFakeTimers();
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached);
+    await attached.controls.shutdown();
+    const before = attached.calls.length;
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(attached.calls).toHaveLength(before);
+    vi.useRealTimers();
+  });
   it("registers session handlers, a status command, and the notify tool — and starts nothing", () => {
     const fake = createFakePi();
 
@@ -44,6 +154,7 @@ describe("pi-caretaker extension entry", () => {
       "before_agent_start",
       "session_shutdown",
       "session_start",
+      "tool_execution_start",
     ]);
     expect(fake.commands.has("caretaker-status")).toBe(true);
     expect(fake.tools.has("caretaker_notify")).toBe(true);
@@ -548,7 +659,7 @@ describe("pi-caretaker extension entry", () => {
         { messages: [{ role: "assistant", content: [{ type: "text", text: "paired answer" }] }] },
         ctx,
       );
-      expect(mock.sends).toEqual([{ chat_id: "42", text: "paired answer" }]);
+      expect(mock.sends).toEqual([{ chat_id: "42", text: "paired answer", reply_parameters: { message_id: 1 } }]);
       await fake.handlers.get("session_shutdown")?.({}, ctx);
     } finally {
       await mock.close();
@@ -677,10 +788,9 @@ describe("pi-caretaker extension entry", () => {
       { messages: [{ role: "assistant", content: [{ type: "text", text: answer }] }] },
       ctx,
     )).resolves.toBeUndefined();
-    const failure = lines.find((line) => line.includes("notify-failed")) ?? "";
-    expect(failure).toContain("failed");
-    expect(failure).not.toContain("TEST:token");
-    expect(failure).not.toContain(answer);
+    expect(lines.some((line) => line.includes("liveness-send-failed"))).toBe(true);
+    expect(lines.join("\n")).not.toContain("TEST:token");
+    expect(lines.join("\n")).not.toContain(answer);
     await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
 

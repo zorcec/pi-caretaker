@@ -24,11 +24,13 @@ import type { AddressInfo } from "node:net";
 export interface RecordedSend {
   chat_id: unknown;
   text: string;
+  reply_parameters?: { message_id?: unknown };
 }
 
 /** One Bot API call the mock answered, in arrival order. */
 export interface RecordedCall {
   method: string;
+  body?: Record<string, unknown>;
 }
 
 export interface MockTelegram {
@@ -40,6 +42,8 @@ export interface MockTelegram {
   calls: RecordedCall[];
   /** Queue updates for the next getUpdates poll (delivered once, in order). */
   enqueueUpdates(updates: readonly unknown[]): void;
+  setNextMessageId(id: number): void;
+  failNextReaction(): void;
   close(): Promise<void>;
 }
 
@@ -72,9 +76,12 @@ export async function startMockTelegram(): Promise<MockTelegram> {
   const sends: RecordedSend[] = [];
   const calls: RecordedCall[] = [];
   const queued: unknown[] = [];
+  let nextMessageId = 1;
+  let failReaction = false;
   const server: Server = createServer(async (req, res) => {
     const method = (req.url ?? "").split("/").pop() ?? "";
-    calls.push({ method });
+    const body = method === "getMe" || method === "deleteWebhook" ? undefined : await readJson(req) as Record<string, unknown>;
+    calls.push({ method, ...(body === undefined ? {} : { body }) });
     if (method === "getMe") {
       json(res, {
         ok: true,
@@ -87,13 +94,25 @@ export async function startMockTelegram(): Promise<MockTelegram> {
       return;
     }
     if (method === "sendMessage") {
-      const body = (await readJson(req)) as { chat_id?: unknown; text?: unknown };
-      sends.push({ chat_id: body.chat_id, text: String(body.text ?? "") });
-      json(res, { ok: true, result: { message_id: 1 } });
+      const sendBody = body as { chat_id?: unknown; text?: unknown; reply_parameters?: { message_id?: unknown } };
+      sends.push({ chat_id: sendBody.chat_id, text: String(sendBody.text ?? ""), ...(sendBody.reply_parameters === undefined ? {} : { reply_parameters: sendBody.reply_parameters }) });
+      json(res, { ok: true, result: { message_id: nextMessageId } });
+      nextMessageId += 1;
+      return;
+    }
+    if (method === "editMessageText" || method === "sendChatAction") {
+      json(res, { ok: true, result: true });
+      return;
+    }
+    if (method === "setMessageReaction") {
+      if (failReaction) {
+        failReaction = false;
+        res.statusCode = 400;
+        json(res, { ok: false, error_code: 400, description: "reaction disabled" });
+      } else json(res, { ok: true, result: true });
       return;
     }
     if (method === "getUpdates") {
-      await readJson(req);
       const batch = queued.splice(0, queued.length);
       json(res, { ok: true, result: batch });
       return;
@@ -110,6 +129,8 @@ export async function startMockTelegram(): Promise<MockTelegram> {
     enqueueUpdates(updates: readonly unknown[]): void {
       queued.push(...updates);
     },
+    setNextMessageId(id: number): void { nextMessageId = id; },
+    failNextReaction(): void { failReaction = true; },
     close: () =>
       new Promise<void>((resolve, reject) =>
         server.close((error?: Error) => (error ? reject(error) : resolve())),
