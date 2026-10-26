@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { connect as netConnect } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { stopPreviousInstance } from "./stop.mjs";
 
 /**
  * Parse KEY=VALUE lines. Blank lines, `#` comments and malformed lines
@@ -57,7 +58,9 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
     foreground,
     detached: !foreground,
     logFile: resolve(root, "pi-caretaker.log"),
-    pidFile: resolve(root, "pi-caretaker.pid"),
+    pidFile: env.PI_CARETAKER_PID_FILE
+      ? resolve(env.PI_CARETAKER_PID_FILE)
+      : resolve(root, "pi-caretaker.pid"),
     healthUrl: `http://${host}:${port}/health`,
     // The child must see the file vars merged under the operator env:
     // validating the token without forwarding it starts a Pi whose entry
@@ -96,6 +99,27 @@ export async function portIsFree(
     }
   }
   return true;
+}
+
+/** Poll after stopping a managed process so its listener has time to close. */
+export async function waitForPortFree(
+  host,
+  port,
+  {
+    probe = portIsFree,
+    now = () => Date.now(),
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    timeoutMs = 10000,
+    pollIntervalMs = 250,
+  } = {},
+) {
+  const deadline = now() + timeoutMs;
+  for (;;) {
+    if (await probe(host, port)) return true;
+    const remaining = deadline - now();
+    if (remaining <= 0) return false;
+    await sleep(Math.min(pollIntervalMs, remaining));
+  }
 }
 
 /**
@@ -217,6 +241,20 @@ async function main() {
     console.error(plan.message);
     process.exit(plan.exitCode);
   }
+  const previous = await stopPreviousInstance({ pidFile: plan.pidFile });
+  if (previous.stopped) {
+    console.log(`Stopped previous caretaker instance (PID ${previous.pid}).`);
+  }
+  const listenerUrl = new URL(plan.healthUrl);
+  const listenerHost = listenerUrl.hostname.replace(/^\[|\]$/g, "");
+  const listenerPort = Number(listenerUrl.port || plan.env.PI_CARETAKER_PORT || "8787");
+  if (!(await waitForPortFree(listenerHost, listenerPort))) {
+    console.error(
+      `Listener still accepting connections at ${listenerHost}:${listenerPort} after stopping the managed instance. This is an unidentified holder; identify it without killing arbitrary processes (for example: ss -ltnp | grep ${listenerPort}).`,
+    );
+    process.exitCode = 1;
+    return;
+  }
   if (plan.foreground) {
     const child = spawn(plan.command, plan.args, {
       cwd: root,
@@ -230,16 +268,6 @@ async function main() {
     child.on("exit", (code, signal) => {
       process.exitCode = code ?? (signal ? 1 : 0);
     });
-    return;
-  }
-  const listenerUrl = new URL(plan.healthUrl);
-  const listenerHost = listenerUrl.hostname.replace(/^\[|\]$/g, "");
-  const listenerPort = Number(listenerUrl.port || plan.env.PI_CARETAKER_PORT || "8787");
-  if (!(await portIsFree(listenerHost, listenerPort))) {
-    console.error(
-      `Listener already running at ${listenerHost}:${listenerPort}. Use pnpm stop or check ${plan.pidFile} for a stale pidfile.`,
-    );
-    process.exitCode = 1;
     return;
   }
   const { openSync } = await import("node:fs");

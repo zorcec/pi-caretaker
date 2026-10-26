@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { spawn } from "node:child_process";
+import { chmodSync, readFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildRpcBootInput,
@@ -10,8 +12,9 @@ import {
   resolveStartConfig,
   waitForFirstLine,
   waitForHealth,
+  waitForPortFree,
 } from "../../scripts/start.mjs";
-import { parsePidFile, resolveStopPlan } from "../../scripts/stop.mjs";
+import { parsePidFile, resolveStopPlan, stopPreviousInstance } from "../../scripts/stop.mjs";
 import {
   buildAlertPayload,
   DEFAULT_ALERT_MESSAGE,
@@ -49,7 +52,7 @@ afterEach(() => {
 function scriptFixture(): RepoFixture {
   const fixture = createRepoFixture();
   active = fixture;
-  for (const name of ["start.mjs", "send-alert.mjs"]) {
+  for (const name of ["start.mjs", "stop.mjs", "send-alert.mjs"]) {
     fixture.write(
       `scripts/${name}`,
       readFileSync(join(REPO_ROOT, "scripts", name), "utf8"),
@@ -61,6 +64,58 @@ function scriptFixture(): RepoFixture {
 /** Env with the caretaker token provably absent (empty beats any ambient value). */
 function noTokenEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return { ...extra, PI_CARETAKER_TOKEN: "" };
+}
+
+function installFakePi(fixture: RepoFixture): string {
+  const script = fixture.write(
+    "bin/pi",
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const http = require("node:http");
+const readline = require("node:readline");
+if (process.env.PI_CARETAKER_TEST_STARTED) {
+  fs.writeFileSync(process.env.PI_CARETAKER_TEST_STARTED, "started");
+}
+readline.createInterface({ input: process.stdin }).once("line", () => {
+  http.createServer((request, response) => {
+    if (request.url === "/health") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{\\"status\\":\\"ok\\"}");
+    } else {
+      response.writeHead(404).end();
+    }
+  }).listen(Number(process.env.PI_CARETAKER_PORT), process.env.PI_CARETAKER_HOST || "127.0.0.1");
+});
+`,
+  );
+  chmodSync(script, 0o755);
+  return `${join(fixture.root, "bin")}${delimiter}${process.env.PATH ?? ""}`;
+}
+
+async function unusedPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("missing loopback port");
+  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return address.port;
+}
+
+async function spawnSleeper(): Promise<{
+  pid: number;
+  exited: Promise<void>;
+}> {
+  const child = spawn("sleep", ["60"], { stdio: "ignore" });
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  if (child.pid === undefined) throw new Error("sleep did not expose its PID after spawn");
+  return { pid: child.pid, exited };
 }
 
 describe("parseSecretsEnv", () => {
@@ -174,6 +229,44 @@ describe("portIsFree", () => {
       portIsFree("127.0.0.1", 8787, { connect, retryDelayMs: 0 }),
     ).resolves.toBe(true);
     expect(calls).toBe(2);
+  });
+});
+
+describe("waitForPortFree", () => {
+  it("reprobes until free and stops at its injected deadline", async () => {
+    let now = 0;
+    let probes = 0;
+    const sleep = async (ms: number): Promise<void> => {
+      now += ms;
+    };
+
+    await expect(
+      waitForPortFree("127.0.0.1", 8787, {
+        probe: async () => ++probes === 3,
+        now: () => now,
+        sleep,
+        timeoutMs: 1000,
+        pollIntervalMs: 100,
+      }),
+    ).resolves.toBe(true);
+    expect(probes).toBe(3);
+
+    probes = 0;
+    const deadlineStart = now;
+    await expect(
+      waitForPortFree("127.0.0.1", 8787, {
+        probe: async () => {
+          probes += 1;
+          return false;
+        },
+        now: () => now,
+        sleep,
+        timeoutMs: 250,
+        pollIntervalMs: 100,
+      }),
+    ).resolves.toBe(false);
+    expect(now - deadlineStart).toBe(250);
+    expect(probes).toBe(4);
   });
 });
 
@@ -341,6 +434,75 @@ describe("stop pure functions", () => {
     expect(resolveStopPlan("not-a-pid")).toEqual({ running: false, reason: "invalid" });
     expect(resolveStopPlan("99999999")).toEqual({ running: false, reason: "stale", pid: 99999999 });
   });
+
+  it("reports missing, invalid, and stale pidfiles without signaling", async () => {
+    for (const [exists, text, reason] of [
+      [false, "", "missing"],
+      [true, "not-a-pid", "invalid"],
+      [true, "42", "stale"],
+    ] as const) {
+      const removed: string[] = [];
+      const result = await stopPreviousInstance({
+        pidFile: "/fixture/pid",
+        exists: () => exists,
+        readFile: () => text,
+        unlink: (path: string) => removed.push(path),
+        kill: (_pid: number, signal: number | NodeJS.Signals) => {
+          if (signal === 0) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+          throw new Error(`unexpected signal ${signal}`);
+        },
+      });
+      expect(result).toEqual({ stopped: false, reason });
+      expect(removed).toEqual(exists ? ["/fixture/pid"] : []);
+    }
+  });
+
+  it("stops a live pid with SIGTERM and removes its pidfile", async () => {
+    const signals: Array<number | NodeJS.Signals> = [];
+    const removed: string[] = [];
+    const result = await stopPreviousInstance({
+      pidFile: "/fixture/pid",
+      exists: () => true,
+      readFile: () => "42\n",
+      unlink: (path: string) => removed.push(path),
+      kill: (_pid: number, signal: number | NodeJS.Signals) => {
+        signals.push(signal);
+        if (signal === 0 && signals.filter((seen) => seen === 0).length > 1) {
+          throw Object.assign(new Error("gone"), { code: "ESRCH" });
+        }
+      },
+      now: () => 0,
+      sleep: async () => undefined,
+    });
+
+    expect(result).toEqual({ stopped: true, pid: 42, forced: false });
+    expect(signals).toEqual([0, "SIGTERM", 0]);
+    expect(removed).toEqual(["/fixture/pid"]);
+  });
+
+  it("uses SIGKILL after the injected five-second TERM deadline", async () => {
+    let now = 0;
+    const signals: Array<number | NodeJS.Signals> = [];
+    const removed: string[] = [];
+    const result = await stopPreviousInstance({
+      pidFile: "/fixture/pid",
+      exists: () => true,
+      readFile: () => "73",
+      unlink: (path: string) => removed.push(path),
+      kill: (_pid: number, signal: number | NodeJS.Signals) => signals.push(signal),
+      now: () => now,
+      sleep: async (ms: number) => {
+        now += ms;
+      },
+    });
+
+    expect(result).toEqual({ stopped: true, pid: 73, forced: true });
+    expect(signals[0]).toBe(0);
+    expect(signals[1]).toBe("SIGTERM");
+    expect(signals.at(-1)).toBe("SIGKILL");
+    expect(now).toBe(5000);
+    expect(removed).toEqual(["/fixture/pid"]);
+  });
 });
 
 describe("send-alert pure functions", () => {
@@ -417,31 +579,89 @@ describe("operator CLIs as child processes", () => {
     expect(result.stderr).toContain("openssl rand -hex 24");
   });
 
-  it("start.mjs fails before spawning or health-checking when the listener port is busy", async () => {
-    const server = await startLoopbackServer({
-      token: "unused-by-port-probe",
-      mode: "ok-202",
-    });
+  it("stops the pidfile process before booting a new background instance", async () => {
+    const fixture = scriptFixture();
+    fixture.write("dist/index.js", "// fixture bundle\n");
+    const path = installFakePi(fixture);
+    const previous = await spawnSleeper();
+    fixture.write("pi-caretaker.pid", `${previous.pid}\n`);
+    const port = await unusedPort();
     try {
-      const fixture = scriptFixture();
-      fixture.write("dist/index.js", "// fixture bundle\n");
-      const port = new URL(server.url).port;
       const result = fixture.runScript("scripts/start.mjs", {
         env: {
+          PATH: path,
           PI_CARETAKER_TOKEN: "test-token",
           PI_CARETAKER_HOST: "127.0.0.1",
-          PI_CARETAKER_PORT: port,
+          PI_CARETAKER_PORT: String(port),
+        },
+      });
+
+      await previous.exited;
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`Stopped previous caretaker instance (PID ${previous.pid}).`);
+      expect(result.stdout).toMatch(/PID: \d+/);
+      expect(result.stdout).toContain(`Listener: http://127.0.0.1:${port}`);
+      expect(result.stdout).toContain("Stop: pnpm stop");
+      expect(fixture.read("pi-caretaker.pid")).toMatch(/^\d+\n$/);
+    } finally {
+      fixture.runScript("scripts/stop.mjs");
+    }
+  });
+
+  it("removes a stale pidfile and proceeds to boot", async () => {
+    const fixture = scriptFixture();
+    fixture.write("dist/index.js", "// fixture bundle\n");
+    const path = installFakePi(fixture);
+    fixture.write("pi-caretaker.pid", "99999999\n");
+    const port = await unusedPort();
+    const result = fixture.runScript("scripts/start.mjs", {
+      env: {
+        PATH: path,
+        PI_CARETAKER_TOKEN: "test-token",
+        PI_CARETAKER_HOST: "127.0.0.1",
+        PI_CARETAKER_PORT: String(port),
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("Stopped previous caretaker instance");
+    expect(result.stdout).toMatch(/PID: \d+/);
+    expect(result.stdout).toContain(`Listener: http://127.0.0.1:${port}`);
+    expect(result.stdout).toContain("Stop: pnpm stop");
+    fixture.runScript("scripts/stop.mjs");
+  });
+
+  it("fails after the bounded wait when an unidentified listener remains busy", async () => {
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("missing loopback port");
+    const fixture = scriptFixture();
+    fixture.write("dist/index.js", "// fixture bundle\n");
+    const path = installFakePi(fixture);
+    const startedMarker = join(fixture.root, "fake-pi-started");
+    try {
+      const result = fixture.runScript("scripts/start.mjs", {
+        env: {
+          PATH: path,
+          PI_CARETAKER_TOKEN: "test-token",
+          PI_CARETAKER_HOST: "127.0.0.1",
+          PI_CARETAKER_PORT: String(address.port),
+          PI_CARETAKER_TEST_STARTED: startedMarker,
         },
       });
 
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain(`Listener already running at 127.0.0.1:${port}`);
-      expect(result.stderr).toContain("pnpm stop");
-      expect(result.stderr).toContain("pi-caretaker.pid");
-      expect(server.requests).toEqual([]);
+      expect(result.stderr).toContain(`Listener still accepting connections at 127.0.0.1:${address.port}`);
+      expect(result.stderr).toContain("unidentified holder");
+      expect(result.stderr).toContain(`ss -ltnp | grep ${address.port}`);
       expect(fixture.exists("pi-caretaker.pid")).toBe(false);
+      expect(fixture.exists("fake-pi-started")).toBe(false);
     } finally {
-      await server.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 

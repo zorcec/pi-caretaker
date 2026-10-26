@@ -41,6 +41,14 @@ export interface PortIsFreeDeps {
   retryDelayMs?: number;
 }
 
+export interface WaitForPortFreeDeps {
+  probe?: (host: string, port: number) => Promise<boolean>;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}
+
 export function parseSecretsEnv(text: string): SecretsVars;
 
 export function resolveStartConfig(options: {
@@ -57,6 +65,12 @@ export function portIsFree(
   host: string,
   port: number,
   deps?: PortIsFreeDeps,
+): Promise<boolean>;
+
+export function waitForPortFree(
+  host: string,
+  port: number,
+  deps?: WaitForPortFreeDeps,
 ): Promise<boolean>;
 
 export type SupervisorLine =
