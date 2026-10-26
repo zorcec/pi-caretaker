@@ -26,6 +26,9 @@ ones matching your task before you start:
   anti-placeholder rule, how to run).
 - `implementation-workflow` — any code change (ADRs first, smallest change,
   red→green proof, gates, bug-ticket rule).
+- `caretaker-chat-conduct` — answering the owner in the Telegram chat
+  (never block the chat; inline only for one-tool answers; delegate the
+  rest and report via `caretaker_notify`).
 - `skill-improvement` — when a skill misleads you during real work (fix
   factual errors immediately, never restyle).
 - `orchestrate-private` — when delegating work to subagents or running
