@@ -112,6 +112,9 @@ describe("resolveStartConfig", () => {
       logFile: expect.stringMatching(/pi-caretaker\.log$/),
       pidFile: expect.stringMatching(/pi-caretaker\.pid$/),
       healthUrl: "http://127.0.0.1:8787/health",
+      env: expect.objectContaining({
+        PI_CARETAKER_TOKEN: "file-token",
+      }),
     });
   });
 
@@ -171,6 +174,21 @@ describe("resolveStartConfig", () => {
     });
 
     expect(plan.ok).toBe(true);
+  });
+
+  it("forwards file vars merged under the operator env to the child", () => {
+    const plan = resolveStartConfig({
+      env: { PI_CARETAKER_TOKEN: "env-token", PI_CARETAKER_HOST: "0.0.0.0" },
+      secretsText: "PI_CARETAKER_TOKEN=file-token\nPI_CARETAKER_PORT=9999\n",
+      hasDist: true,
+    });
+
+    expect(plan.ok).toBe(true);
+    if (plan.ok) {
+      expect(plan.env["PI_CARETAKER_TOKEN"]).toBe("env-token");
+      expect(plan.env["PI_CARETAKER_PORT"]).toBe("9999");
+      expect(plan.env["PI_CARETAKER_HOST"]).toBe("0.0.0.0");
+    }
   });
 
   it("prefers the operator environment over the secrets file", () => {

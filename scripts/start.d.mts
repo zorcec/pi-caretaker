@@ -10,6 +10,8 @@ export interface StartPlanOk {
   logFile: string;
   pidFile: string;
   healthUrl: string;
+  /** File vars merged under the operator env — what the child Pi runs with. */
+  env: NodeJS.ProcessEnv;
 }
 
 export interface StartPlanFailure {

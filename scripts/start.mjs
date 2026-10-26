@@ -55,6 +55,10 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
     logFile: resolve(root, "pi-caretaker.log"),
     pidFile: resolve(root, "pi-caretaker.pid"),
     healthUrl: `http://${host}:${port}/health`,
+    // The child must see the file vars merged under the operator env:
+    // validating the token without forwarding it starts a Pi whose entry
+    // immediately disables itself (MISSING_WEBHOOK_TOKEN).
+    env: { ...fileVars, ...env },
   };
 }
 
@@ -105,7 +109,7 @@ async function main() {
   if (plan.foreground) {
     const child = spawn(plan.command, plan.args, {
       cwd: root,
-      env: process.env,
+      env: plan.env,
       stdio: "inherit",
     });
     child.on("error", (error) => {
@@ -121,7 +125,7 @@ async function main() {
   const logFd = openSync(plan.logFile, "a");
   const child = spawn(plan.command, plan.args, {
     cwd: root,
-    env: process.env,
+    env: plan.env,
     detached: true,
     stdio: ["pipe", logFd, logFd],
   });
