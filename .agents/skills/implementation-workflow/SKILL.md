@@ -77,9 +77,9 @@ pnpm typecheck   # tsc --noEmit
 pnpm check       # typecheck + lint + test — green before EVERY commit
 ```
 
-- **pre-commit:** identity (`check-git-identity.mjs`) → ADR gate
-  (`check-adrs.mjs`: dangling refs, pins exist, index in sync, code refs
-  every ADR, day-granularity drift). Fast, no network.
+- **pre-commit:** ADR gate (`check-adrs.mjs`: dangling refs, pins exist,
+  index in sync, code refs every ADR, day-granularity drift). Fast, no
+  network.
 - **pre-push:** typecheck → lint → test, in that order. There is no
   remote CI: these local gates are the only gates.
 - **No remote CI, ever.** No `.github/workflows`, no GitHub Actions, no

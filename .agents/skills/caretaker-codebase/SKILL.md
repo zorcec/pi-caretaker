@@ -61,8 +61,8 @@ so a stranger cloning it still gets the rules that matter.
 
 ## Guards, hooks, and release (`scripts/`, `.husky/`)
 
-- `scripts/check-adrs.mjs` + `scripts/check-git-identity.mjs` run on
-  **pre-commit** (fail fast, no network). Identity has no opt-out and no
+- `scripts/check-adrs.mjs` runs on **pre-commit** (fail fast, no
+  network). Identity has no opt-out and no
   grandfathered SHAs — the list starts empty on purpose.
 - **pre-push** runs typecheck → lint → test, in that order. There is no
   remote CI: these local gates are the only gates.

@@ -35,10 +35,10 @@
  *
  * Exit 1 with a list of problems. Exit 0 when clean.
  *
- * Import-safe by design (mirrors scripts/check-git-identity.mjs): the rules
- * live in exported runCheck(), which returns the report as data and never
- * prints or exits. Only main() owns output and the exit code, so tests can
- * import this module for coverage without killing their own worker.
+ * Import-safe by design: the rules live in exported runCheck(), which
+ * returns the report as data and never prints or exits. Only main() owns
+ * output and the exit code, so tests can import this module for coverage
+ * without killing their own worker.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";

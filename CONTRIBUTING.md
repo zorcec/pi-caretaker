@@ -20,8 +20,8 @@ pnpm check       # must be green before every commit
 | `pnpm check`         | typecheck + lint + test       |
 | `pnpm release`       | tag + GitHub release from CHANGELOG (refuses empty notes) |
 
-Hooks (installed via husky): `pre-commit` runs the identity check and the
-ADR gate, fail fast, no network. `pre-push` runs typecheck + lint + test.
+Hooks (installed via husky): `pre-commit` runs the ADR gate, fail fast,
+no network. `pre-push` runs typecheck + lint + test.
 
 ## ADR requirement
 

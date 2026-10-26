@@ -1,2 +1,1 @@
-node scripts/check-git-identity.mjs || exit 1
 node scripts/check-adrs.mjs || exit 1

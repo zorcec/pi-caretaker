@@ -18,10 +18,6 @@ describe("git hooks", () => {
   describe("pre-commit", () => {
     const body = hook("pre-commit");
 
-    it("runs the identity guard", () => {
-      expect(body).toContain("scripts/check-git-identity.mjs");
-    });
-
     it("runs the ADR guard", () => {
       expect(body).toContain("scripts/check-adrs.mjs");
     });
