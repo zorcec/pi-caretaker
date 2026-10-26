@@ -5,6 +5,7 @@ import {
   parseSecretsEnv,
   resolveStartConfig,
 } from "../../scripts/start.mjs";
+import { parsePidFile, resolveStopPlan } from "../../scripts/stop.mjs";
 import {
   buildAlertPayload,
   DEFAULT_ALERT_MESSAGE,
@@ -97,7 +98,16 @@ describe("resolveStartConfig", () => {
       ok: true,
       command: "pi",
       args: ["--extension", "./dist/index.js"],
+      foreground: false,
+      detached: true,
+      logFile: expect.stringMatching(/pi-caretaker\.log$/),
+      pidFile: expect.stringMatching(/pi-caretaker\.pid$/),
     });
+  });
+
+  it("resolves attached mode explicitly", () => {
+    const plan = resolveStartConfig({ env: { PI_CARETAKER_TOKEN: "t" }, hasDist: true, root: "/repo", foreground: true });
+    expect(plan).toMatchObject({ ok: true, foreground: true, detached: false, logFile: "/repo/pi-caretaker.log", pidFile: "/repo/pi-caretaker.pid" });
   });
 
   it("treats an omitted secrets file as empty", () => {
@@ -131,6 +141,19 @@ describe("resolveStartConfig", () => {
       expect(plan.exitCode).toBe(1);
       expect(plan.message).toContain("pnpm build");
     }
+  });
+});
+
+describe("stop pure functions", () => {
+  it("parses only a positive integer pid", () => {
+    expect(parsePidFile("42\n")).toBe(42);
+    expect(parsePidFile("nope")).toBeNull();
+    expect(parsePidFile("0")).toBeNull();
+  });
+  it("decides missing and stale pidfiles without signals", () => {
+    expect(resolveStopPlan("", false)).toEqual({ running: false, reason: "missing" });
+    expect(resolveStopPlan("not-a-pid")).toEqual({ running: false, reason: "invalid" });
+    expect(resolveStopPlan("99999999")).toEqual({ running: false, reason: "stale", pid: 99999999 });
   });
 });
 

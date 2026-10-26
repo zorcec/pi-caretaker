@@ -28,6 +28,7 @@
   "scripts": {
     "build": "tsup",
     "start": "node scripts/start.mjs",
+    "stop": "node scripts/stop.mjs",
     "prestart": "pnpm build",
     "send:alert": "node scripts/send-alert.mjs",
     "test": "vitest run",
