@@ -9,13 +9,13 @@ importers:
   .:
     dependencies:
       '@earendil-works/pi-coding-agent':
-        specifier: ^1.4.0
+        specifier: '*'
         version: 1.4.0(@aws-sdk/credential-provider-node@3.972.88)(@smithy/signature-v4@5.7.4)(supports-color@7.2.0)(ws@8.22.0)(zod@4.6.7)
       grammy:
         specifier: ^1.46.0
         version: 1.46.0(supports-color@7.2.0)
       typebox:
-        specifier: ^1.4.3
+        specifier: '*'
         version: 1.4.3
       zod:
         specifier: ^4.1.0
