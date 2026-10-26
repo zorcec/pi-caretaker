@@ -26,6 +26,9 @@ ones matching your task before you start:
   anti-placeholder rule, how to run).
 - `implementation-workflow` — any code change (ADRs first, smallest change,
   red→green proof, gates, bug-ticket rule).
+- `caretaker-alert-triage` — judging an admitted webhook alert in a
+  background turn (notify-or-stay-silent, read-only investigation,
+  never act without the owner's consent).
 - `caretaker-chat-conduct` — answering the owner in the Telegram chat
   (never block the chat; inline only for one-tool answers; delegate the
   rest and report via `caretaker_notify`).
