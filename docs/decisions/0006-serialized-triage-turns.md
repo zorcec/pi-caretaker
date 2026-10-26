@@ -5,7 +5,7 @@ Background triage turns are submitted with `pi.sendUserMessage(..., { deliverAs:
 ## Why
 Pi queues a follow-up message into the starting run when busy and settles turns in order, so a second serialization layer would be a second agent loop by another name — exactly what the architecture forbids. One pump plus Pi's queue gives sequential, non-interleaved delivery with no new concurrency primitive to get wrong.
 ## Consequence
-Every turn submission goes through the entry's `deliver` path; session switching, replacement, and compaction inherit Pi behavior unchanged. A durable cross-restart outbox would need its own ADR (V1 non-goal: no persistence).
+Every turn submission goes through the entry's `deliver` path; session switching, replacement, and compaction inherit Pi behavior unchanged. A durable cross-restart outbox would need its own ADR (V1 non-goal: no persistence). Owner-initiated Telegram text (ADR-0007) is relayed as a user message and sits outside triage-turn scope; every event-driven turn still goes through `deliver`.
 ## Pins
 - `tests/index.test.ts`
 - `tests/e2e/pipeline.e2e.test.ts`

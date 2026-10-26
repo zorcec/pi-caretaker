@@ -43,6 +43,7 @@ import {
 } from "./escape-hatch.js";
 import { getHealth as buildHealth, type HealthReport } from "./health.js";
 import type { TelegramAdapter } from "./telegram/index.js";
+import { createTelegramAdapter, type TelegramTransportDeps, type ManagedTelegramAdapter } from "./telegram/grammy.js";
 
 /** Extension version, reported by getHealth() and caretaker-status. */
 /** Extension version: the built package's version, injected at build time.
@@ -105,7 +106,7 @@ export interface CaretakerControls {
  * the test/Telegram-ticket seams; it is assignable to Pi's ExtensionFactory
  * because a non-void return is assignable to a void-returning signature.
  */
-export default function piCaretaker(pi: ExtensionAPI): CaretakerControls {
+export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTransportDeps): CaretakerControls {
   let session: CaretakerSession | undefined;
   let telegram: NotifyTransport | undefined;
   let stopped = false;
@@ -164,6 +165,18 @@ export default function piCaretaker(pi: ExtensionAPI): CaretakerControls {
     const address = `http://${config.host}:${(server.address() as { port: number }).port}`;
     session = { config, queue, server, pump, address };
     stopped = false;
+    if (config.telegramBotToken !== undefined && config.telegramChatId !== undefined) {
+      try {
+        const adapter: ManagedTelegramAdapter = await createTelegramAdapter(
+          { botToken: config.telegramBotToken, chatId: config.telegramChatId }, telegramDeps,
+        );
+        adapter.onMessage((text) => { pi.sendUserMessage(text, { deliverAs: "followUp" }); });
+        telegram = adapter;
+        adapter.start();
+      } catch (error) {
+        ctx.ui.notify(`pi-caretaker Telegram disabled: ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+    }
   }
 
   async function stop(): Promise<void> {
@@ -171,7 +184,9 @@ export default function piCaretaker(pi: ExtensionAPI): CaretakerControls {
     stopped = true;
     const active = session;
     session = undefined;
+    const activeTelegram = telegram as (NotifyTransport & { stop?: () => Promise<void> }) | undefined;
     telegram = undefined;
+    await activeTelegram?.stop?.().catch(() => undefined);
     if (active === undefined) return;
     active.pump.stop();
     await active.pump.drained().catch(() => undefined);

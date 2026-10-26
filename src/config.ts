@@ -20,12 +20,16 @@ export interface CaretakerConfig {
   port: number;
   /** In-memory queue capacity. Default 100. */
   queueCapacity: number;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }
 
 export type ConfigurationErrorCode =
   | "MISSING_WEBHOOK_TOKEN"
   | "INVALID_PORT"
-  | "INVALID_QUEUE_CAPACITY";
+  | "INVALID_QUEUE_CAPACITY"
+  | "MISSING_TELEGRAM_BOT_TOKEN"
+  | "MISSING_TELEGRAM_CHAT_ID";
 
 export class ConfigurationError extends Error {
   readonly code: ConfigurationErrorCode;
@@ -83,10 +87,20 @@ export function readCaretakerConfig(
     env["PI_CARETAKER_HOST"] === ""
       ? DEFAULT_HOST
       : env["PI_CARETAKER_HOST"];
+  const telegramBotToken = env["PI_CARETAKER_TELEGRAM_BOT_TOKEN"];
+  const telegramChatId = env["PI_CARETAKER_TELEGRAM_CHAT_ID"];
+  if (telegramBotToken && !telegramChatId) {
+    throw new ConfigurationError("MISSING_TELEGRAM_CHAT_ID", "PI_CARETAKER_TELEGRAM_CHAT_ID is required with the Telegram bot token");
+  }
+  if (telegramChatId && !telegramBotToken) {
+    throw new ConfigurationError("MISSING_TELEGRAM_BOT_TOKEN", "PI_CARETAKER_TELEGRAM_BOT_TOKEN is required with the Telegram chat id");
+  }
   return {
     token,
     host,
     port: parsePort(env["PI_CARETAKER_PORT"]),
     queueCapacity: parseCapacity(env["PI_CARETAKER_ALERTS_QUEUE_CAPACITY"]),
+    ...(telegramBotToken ? { telegramBotToken } : {}),
+    ...(telegramChatId ? { telegramChatId } : {}),
   };
 }

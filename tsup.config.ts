@@ -33,6 +33,10 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
+  // ADR-0007: grammy ships bundled, never external — an external
+  // bare import breaks the packaged bundle (CJS interop) and would
+  // need network-adjacent resolution at the install site.
+  noExternal: ["grammy"],
   define: {
     __PI_CARETAKER_COMMIT__: JSON.stringify(commitSha()),
     __PI_CARETAKER_VERSION__: JSON.stringify(packageVersion()),

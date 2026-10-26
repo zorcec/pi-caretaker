@@ -27,6 +27,8 @@ describe("caretaker configuration", () => {
       "PI_CARETAKER_HOST",
       "PI_CARETAKER_PORT",
       "PI_CARETAKER_ALERTS_QUEUE_CAPACITY",
+      "PI_CARETAKER_TELEGRAM_BOT_TOKEN",
+      "PI_CARETAKER_TELEGRAM_CHAT_ID",
     ]) {
       delete process.env[key];
     }
@@ -109,6 +111,56 @@ describe("caretaker configuration", () => {
       }
     },
   );
+
+  it("leaves Telegram unconfigured when the pair is absent", () => {
+    const config = readCaretakerConfig(env({ PI_CARETAKER_TOKEN: "t" }));
+
+    expect(config.telegramBotToken).toBeUndefined();
+    expect(config.telegramChatId).toBeUndefined();
+  });
+
+  it("accepts the Telegram pair together", () => {
+    const config = readCaretakerConfig(
+      env({
+        PI_CARETAKER_TOKEN: "t",
+        PI_CARETAKER_TELEGRAM_BOT_TOKEN: "123:ABC",
+        PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+      }),
+    );
+
+    expect(config.telegramBotToken).toBe("123:ABC");
+    expect(config.telegramChatId).toBe("42");
+  });
+
+  it("rejects a half-configured Telegram pair, naming the missing half without leaking values", () => {
+    try {
+      readCaretakerConfig(
+        env({
+          PI_CARETAKER_TOKEN: "t",
+          PI_CARETAKER_TELEGRAM_BOT_TOKEN: "tok-SECRET-1",
+        }),
+      );
+      expect.unreachable("must throw without a chat id");
+    } catch (error) {
+      expect((error as ConfigurationError).code).toBe(
+        "MISSING_TELEGRAM_CHAT_ID",
+      );
+      expect((error as Error).message).not.toContain("SECRET");
+    }
+    try {
+      readCaretakerConfig(
+        env({
+          PI_CARETAKER_TOKEN: "t",
+          PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+        }),
+      );
+      expect.unreachable("must throw without a bot token");
+    } catch (error) {
+      expect((error as ConfigurationError).code).toBe(
+        "MISSING_TELEGRAM_BOT_TOKEN",
+      );
+    }
+  });
 
   it("ignores unrelated environment keys", () => {
     const config = readCaretakerConfig(

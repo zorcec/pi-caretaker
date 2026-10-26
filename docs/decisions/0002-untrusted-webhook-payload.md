@@ -10,6 +10,9 @@ authenticated sender can itself be compromised — auth proves who sent it,
 not that the text is safe to obey.
 ## Consequence
 Every future consumer of webhook fields inherits this rule; sender-controlled
-instructions would need their own ADR with a threat model.
+instructions would need their own ADR with a threat model. Inbound Telegram
+text is owner-scoped by the paired-chat allowlist (ADR-0007) and travels as
+turn content — it is never webhook input and never enters an instruction
+channel.
 ## Pins
 - `tests/untrusted-payload.test.ts`

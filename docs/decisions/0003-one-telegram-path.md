@@ -8,7 +8,8 @@ output automatically — only a deliberate notification appears.
 With two notifiers posting to the owner's chat, silence can never be proven,
 and "it only pings when it matters" becomes unenforceable.
 ## Consequence
-Any second Telegram-sending path requires amending or superseding this ADR;
-the Pitgram spike must prove silent turns stay silent first.
+Any second Telegram-sending path requires amending or superseding this ADR.
+Pitgram was rejected by owner decision (see ADR-0007); the landed grammY
+adapter keeps the single path — `notify(text)` remains the only sender.
 ## Pins
 - `tests/telegram-path.test.ts`

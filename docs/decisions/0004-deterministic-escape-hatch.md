@@ -9,6 +9,9 @@ LLM triage has bad days; a host gone dark or dead backups must reach the
 owner even if the model would have called them noise.
 ## Consequence
 The list must stay short — everything on it costs an unconditional ping —
-and promoting a new alert class to it is an owner decision.
+and promoting a new alert class to it is an owner decision. Since the
+Telegram ticket (ADR-0007), a configured transport makes the bypass actually
+notify; with no transport configured, matches fall through to triage loudly
+rather than dropping.
 ## Pins
 - `tests/escape-hatch.test.ts`
