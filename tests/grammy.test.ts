@@ -133,6 +133,27 @@ describe("grammY Telegram adapter", () => {
     expect(edit?.body).toMatchObject({ chat_id: "42", message_id: 37, text: "working… 1 calls · last: bash · 8s" });
   });
 
+  it("sets a queued reaction on the paired chat message through the managed adapter", async () => {
+    const { fetch, calls } = stubFetch((url) => {
+      if (url.endsWith("/getMe")) return okGetMe;
+      if (url.endsWith("/setMessageReaction")) return { ok: true, result: true };
+      if (url.endsWith("/getUpdates")) return { ok: true, result: [] };
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const adapter = await createTelegramAdapter({ botToken: "TEST:token", chatId: "42" }, { fetch });
+    try {
+      await adapter.react(73, "🤔");
+    } finally {
+      await adapter.stop();
+    }
+    const reaction = calls.find((call) => call.url.endsWith("/setMessageReaction"));
+    expect(reaction?.body).toEqual({
+      chat_id: "42",
+      message_id: 73,
+      reaction: [{ type: "emoji", emoji: "🤔" }],
+    });
+  });
+
   it("propagates send failures instead of claiming delivery", async () => {
     const { fetch } = stubFetch((url) => {
       if (url.endsWith("/getMe")) return okGetMe;

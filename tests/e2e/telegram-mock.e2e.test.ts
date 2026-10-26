@@ -56,6 +56,46 @@ describe("mocked Telegram e2e (loopback Bot API)", () => {
       await fake.handlers.get("session_shutdown")?.({}, ctx);
     } finally { await mock.close(); }
   });
+  it("records a queued reaction for the second owner message before its relay turn starts", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi();
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies);
+      await startedPort(fake, ctx);
+
+      mock.enqueueUpdates([{ update_id: 1, message: { message_id: 101, chat: { id: 42, type: "private" }, text: "owner A", date: 1 } }]);
+      await waitForTurns(fake, 1);
+      await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "owner A" }, ctx);
+      await vi.waitFor(() => expect(mock.calls.some((call) => call.method === "setMessageReaction" && call.body?.message_id === 101)).toBe(true));
+
+      mock.enqueueUpdates([{ update_id: 2, message: { message_id: 102, chat: { id: 42, type: "private" }, text: "owner B", date: 1 } }]);
+      await waitForTurns(fake, 2);
+      await vi.waitFor(() => expect(mock.calls.some((call) => {
+        const reaction = call.body?.reaction as { emoji?: string }[] | undefined;
+        return call.method === "setMessageReaction" && call.body?.message_id === 102 && reaction?.some((item) => item.emoji === "🤔") === true;
+      })).toBe(true));
+
+      const ownerBQueued = fake.sent.find((turn) => turn.content === "owner B");
+      expect(ownerBQueued?.options).toEqual({ deliverAs: "followUp" });
+      const queuedReactionIndex = mock.calls.findIndex((call) => {
+        const reaction = call.body?.reaction as { emoji?: string }[] | undefined;
+        return call.method === "setMessageReaction" && call.body?.message_id === 102 && reaction?.some((item) => item.emoji === "🤔") === true;
+      });
+      expect(queuedReactionIndex).toBeGreaterThanOrEqual(0);
+
+      await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "owner B" }, ctx);
+      await vi.waitFor(() => expect(mock.calls.filter((call) => call.method === "setMessageReaction" && call.body?.message_id === 102).length).toBe(2));
+      const activeReaction = mock.calls.findIndex((call, index) => {
+        const reaction = call.body?.reaction as { emoji?: string }[] | undefined;
+        return index > queuedReactionIndex && call.method === "setMessageReaction" && call.body?.message_id === 102 && reaction?.some((item) => item.emoji === "👀") === true;
+      });
+      expect(activeReaction).toBeGreaterThan(queuedReactionIndex);
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally { await mock.close(); }
+  });
+
   it("sends owner liveness and a complete chunked answer over real HTTP while webhook turns stay silent", async () => {
     testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
     const mock = await startMockTelegram();

@@ -78,7 +78,7 @@ export interface ManagedTelegramAdapter extends TelegramAdapter {
   onPairedMessage(handler: (text: string, messageId: number) => void): void;
   onCommand(name: "stop" | "compact" | "thinking" | "model", handler: (messageId: number) => void): void;
   onCommandCallback(handler: (data: string, messageId: number) => void): void;
-  react(messageId: number, emoji: "👀"): Promise<void>;
+  react(messageId: number, emoji: "👀" | "🤔"): Promise<void>;
   sendChatAction(action: "typing"): Promise<void>;
   sendMessage(text: string, replyToMessageId?: number, replyMarkup?: InlineKeyboardMarkup, options?: { disable_notification?: boolean }): Promise<number>;
   editMessageText(messageId: number, text: string): Promise<void>;

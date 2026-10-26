@@ -44,6 +44,12 @@ import {
 } from "./escape-hatch.js";
 import { getHealth as buildHealth, type HealthReport } from "./health.js";
 import { ANSWER_CHUNK_OFFER, formatAnswerChunks } from "./answer-chunks.js";
+import {
+  clearInboundMessageStates,
+  markInboundMessageActive,
+  rememberInboundMessageState,
+  type InboundMessagePhase,
+} from "./inbound-message-state.js";
 import type { TelegramAdapter } from "./telegram/index.js";
 import { createTelegramAdapter, resolveTelegramDeps, type TelegramTransportDeps, type ManagedTelegramAdapter } from "./telegram/grammy.js";
 
@@ -133,6 +139,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   // FIFO order and match exact user prompt text at turn start; ADR-0006's
   // single-active-turn guarantee keeps this marker paired through agent_end.
   let pendingInboundTelegramMessages: { text: string; messageId: number }[] = [];
+  const inboundMessageStates = new Map<number, InboundMessagePhase>();
   let relayCurrentTurn = false;
   let relayInboundMessageId: number | undefined;
   let livenessTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -281,6 +288,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
         const epoch = activeOwnerRelayEpoch;
         stoppedOwnerRelayEpoch = epoch;
         relayCurrentTurn = false;
+        clearInboundMessageStates(inboundMessageStates);
         clearLiveness();
         const activeStatusId = statusMessageId;
         statusMessageId = 0;
@@ -357,9 +365,18 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
 
   const forwardPairedMessage = (text: string, messageId: number): void => {
     inboundMessageCount += 1;
+    const ownerRelayWasActive = relayCurrentTurn && activeOwnerRelayEpoch !== undefined;
     try {
       pi.sendUserMessage(text, { deliverAs: "followUp" });
       pendingInboundTelegramMessages.push({ text, messageId });
+      rememberInboundMessageState(inboundMessageStates, messageId, "pending");
+      if (ownerRelayWasActive && managedTelegram !== undefined) {
+        try {
+          void managedTelegram.react(messageId, "🤔").catch((error: unknown) => logControlFailure("queued-receipt", error));
+        } catch (error) {
+          logControlFailure("queued-receipt", error);
+        }
+      }
       console.error("[pi-caretaker] telegram forwarded");
     } catch (error) {
       console.error(
@@ -390,6 +407,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     if (session !== undefined) return;
     const startGeneration = generation;
     pendingInboundTelegramMessages = [];
+    clearInboundMessageStates(inboundMessageStates);
     relayCurrentTurn = false;
     let config: CaretakerConfig;
     try {
@@ -464,6 +482,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     if (stopped) return;
     stopped = true;
     pendingInboundTelegramMessages = [];
+    clearInboundMessageStates(inboundMessageStates);
     modelPickerSnapshots.clear();
     relayCurrentTurn = false;
     clearLiveness();
@@ -532,6 +551,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     if (pendingIndex < 0) return;
     const [inbound] = pendingInboundTelegramMessages.splice(pendingIndex, 1);
     if (inbound === undefined) return;
+    markInboundMessageActive(inboundMessageStates, inbound.messageId);
     relayInboundMessageId = inbound.messageId;
     relayCurrentTurn = true;
     ownerRelayEpoch += 1;
@@ -575,6 +595,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     statusMessageId = 0;
     const inboundMessageId = relayInboundMessageId;
     relayInboundMessageId = undefined;
+    if (inboundMessageId !== undefined) inboundMessageStates.delete(inboundMessageId);
     const duration = elapsedText();
     const finalAssistant = [...event.messages]
       .reverse()

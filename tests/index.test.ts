@@ -393,6 +393,55 @@ describe("pi-caretaker extension entry", () => {
     expect(attached.managed.onMessage).not.toHaveBeenCalled();
   });
 
+  it("reacts with a queued mark when a second owner message arrives during an active relay", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "first owner message", 71);
+    attached.managed.react.mockClear();
+
+    attached.inbound("second owner message", 72);
+
+    expect(attached.managed.react).toHaveBeenCalledWith(72, "🤔");
+    expect(fake.sent.map((turn) => turn.content)).toEqual(["first owner message", "second owner message"]);
+    await attached.controls.shutdown();
+  });
+
+  it("sends separate queued reactions and forwards identical texts separately", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "repeat text", 80);
+    attached.managed.react.mockClear();
+    const forwardsBefore = fake.sent.length;
+
+    attached.inbound("repeat text", 81);
+    attached.inbound("repeat text", 82);
+
+    expect(attached.managed.react.mock.calls).toEqual([[81, "🤔"], [82, "🤔"]]);
+    expect(fake.sent.slice(forwardsBefore).map((turn) => turn.content)).toEqual(["repeat text", "repeat text"]);
+    await attached.controls.shutdown();
+  });
+
+  it("does not send a queued reaction for an owner message received while idle", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+
+    attached.inbound("idle owner message", 83);
+
+    expect(attached.managed.react).not.toHaveBeenCalled();
+    expect(fake.sent.map((turn) => turn.content)).toEqual(["idle owner message"]);
+    await attached.controls.shutdown();
+  });
+
+  it("hop-logs a queued reaction failure without throwing or dropping the forward", async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { lines.push(args.join(" ")); });
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "active owner message", 84);
+    attached.managed.react.mockRejectedValue(new Error("queued reaction failed"));
+
+    expect(() => attached.inbound("queued owner message", 85)).not.toThrow();
+    expect(fake.sent.map((turn) => turn.content)).toEqual(["active owner message", "queued owner message"]);
+    await vi.waitFor(() => expect(lines.some((line) => line.includes("queued-receipt-failed") && line.includes("queued reaction failed"))).toBe(true));
+    await attached.controls.shutdown();
+  });
+
   it("clears typing and delayed status timers when stopped mid-turn", async () => {
     vi.useFakeTimers();
     const fake = createFakePi(); const attached = attachManaged(fake);
@@ -919,6 +968,10 @@ describe("pi-caretaker extension entry", () => {
       ]);
       await waitForTurns(fake, 2);
       expect(fake.sent[1]?.content).toBe("paired follow-up");
+      expect(mock.calls.some((call) => {
+        const reaction = call.body?.reaction as { emoji?: string }[] | undefined;
+        return call.method === "setMessageReaction" && call.body?.message_id === 1 && reaction?.some((item) => item.emoji === "🤔") === true;
+      })).toBe(false);
 
       await fake.handlers.get("agent_end")?.(
         { messages: [{ role: "assistant", content: [{ type: "text", text: "webhook answer" }] }] },

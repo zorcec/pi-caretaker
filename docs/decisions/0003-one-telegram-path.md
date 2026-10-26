@@ -11,12 +11,12 @@ adapter-owned protocol messages, and these owner-originated replies appear.
 With two notifiers posting to the owner's chat, silence can never be proven,
 and "it only pings when it matters" becomes unenforceable.
 ## Consequence
-Any second Telegram-sending path requires amending or superseding this ADR. Fixed protocol acknowledgments, liveness signals, interactive command pickers/callbacks, and deterministic command replies are adapter-owned protocol behavior, never model output or an expansion of the notify path.
-Paired-chat inbound replies use the same `notify(text)` sender; background,
-webhook, and escape-hatch turns remain silent unless they deliberately notify.
+Any second Telegram-sending path requires amending or superseding this ADR. Fixed protocol acknowledgments, liveness signals, interactive command pickers/callbacks, deterministic command replies, and queued owner-message receipts are adapter-owned protocol behavior, never model output or a second outbound path.
+Paired-chat inbound final answers use the managed `sendMessage(text, replyToId)` surface; background, webhook, and escape-hatch turns remain silent unless they deliberately notify.
 Pitgram was rejected by owner decision (see ADR-0007); grammY keeps this
 single outbound path.
 ## Pins
+- `tests/inbound-message-state.test.ts`
 - `tests/telegram-path.test.ts`
 - `tests/index.test.ts`
 - `tests/e2e-local/caretaker.e2e-local.test.ts`
