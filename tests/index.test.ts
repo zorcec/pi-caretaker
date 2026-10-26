@@ -200,6 +200,62 @@ describe("pi-caretaker extension entry", () => {
     expect(fake.notifies[0]?.message).toContain(EXTENSION_VERSION);
   });
 
+  it("caretaker-status reports delivery failure and operational state exactly", async () => {
+    testEnv();
+    const fake = createFakePi();
+    const originalSend = fake.api.sendUserMessage.bind(fake.api);
+    let fail = false;
+    (fake.api as unknown as { sendUserMessage: (content: string, options?: unknown) => void }).sendUserMessage = (content, options) => {
+      if (fail) throw new Error("consumer failure");
+      originalSend(content, options as never);
+    };
+    piCaretaker(fake.api);
+    const ctx = fakeContext(fake.notifies);
+    const port = await startedPort(fake, ctx);
+    const status = fake.commands.get("caretaker-status");
+    if (status === undefined) throw new Error("caretaker-status not registered");
+    await status.handler("", ctx as never);
+    expect(fake.notifies.at(-1)?.message).toContain("delivery: operational");
+    fail = true;
+    await postEvent(port, { message: "will fail" });
+    const deadline = Date.now() + 3000;
+    let statusMessage = "";
+    while (!statusMessage.includes("delivery: failed — restart required") && Date.now() < deadline) {
+      await status.handler("", ctx as never);
+      statusMessage = fake.notifies.at(-1)?.message ?? "";
+      if (!statusMessage.includes("delivery: failed — restart required")) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(statusMessage).toContain("delivery: failed — restart required");
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
+  });
+
+  it("stops a pending Telegram adapter construction when shutdown changes generation", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:pending", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    let releaseGetMe!: (response: Response) => void;
+    let getUpdatesCalls = 0;
+    const fetch = (async (url: string | URL | Request) => {
+      if (String(url).endsWith("/getMe")) return await new Promise<Response>((resolve) => { releaseGetMe = resolve; });
+      if (String(url).endsWith("/deleteWebhook")) return new Response(JSON.stringify({ ok: true, result: true }));
+      if (String(url).endsWith("/getUpdates")) { getUpdatesCalls += 1; return new Response(JSON.stringify({ ok: true, result: [] })); }
+      throw new Error(`unexpected call: ${url}`);
+    }) as typeof globalThis.fetch;
+    const fake = createFakePi();
+    const controls = piCaretaker(fake.api, { fetch });
+    const ctx = fakeContext(fake.notifies);
+    const starting = fake.handlers.get("session_start")?.({}, ctx);
+    const deadline = Date.now() + 3000;
+    while (releaseGetMe === undefined && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
+    const address = controls.getSession()?.address;
+    expect(address).toBeDefined();
+    await controls.shutdown();
+    const port = Number(new URL(address!).port);
+    releaseGetMe(new Response(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, first_name: "T", username: "t" } })));
+    await starting;
+    expect(controls.getSession()).toBeUndefined();
+    expect(getUpdatesCalls).toBe(0);
+    await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
+  });
+
   it("caretaker-status reports managed Telegram inbound count and polling errors", async () => {
     testEnv({
       PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:status-token",

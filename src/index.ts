@@ -130,6 +130,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   let pendingInboundTelegramMessages: string[] = [];
   let relayCurrentTurn = false;
   let stopped = false;
+  let generation = 0;
 
   /**
    * One turn per admitted event, serialized through Pi's native queue
@@ -152,6 +153,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
 
   async function start(ctx: ExtensionContext): Promise<void> {
     if (session !== undefined) return;
+    const startGeneration = generation;
     pendingInboundTelegramMessages = [];
     relayCurrentTurn = false;
     let config: CaretakerConfig;
@@ -171,10 +173,12 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     const queue = createEventQueue<EventEnvelope>({
       capacity: config.queueCapacity,
     });
+    const pump = startDelivery(queue, deliver);
     const server = createWebhookListener({
       token: config.token,
       version: EXTENSION_VERSION,
       queue: queue as EventQueue<EventEnvelope>,
+      isOperational: () => !pump.hasFailed(),
     });
     await new Promise<void>((resolve, reject) => {
       server.on("error", reject);
@@ -183,7 +187,11 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
         resolve();
       });
     });
-    const pump = startDelivery(queue, deliver);
+    if (generation !== startGeneration) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      return;
+    }
     const address = `http://${config.host}:${(server.address() as { port: number }).port}`;
     inboundMessageCount = 0;
     session = { config, queue, server, pump, address };
@@ -197,6 +205,14 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
           // arrives via env — see resolveTelegramDeps (ADR-0007).
           resolveTelegramDeps(telegramDeps, process.env),
         );
+        if (generation !== startGeneration) {
+          await adapter.stop();
+          if (server.listening) {
+            server.closeAllConnections();
+            await new Promise<void>((resolve) => server.close(() => resolve()));
+          }
+          return;
+        }
         adapter.onMessage((text) => {
           inboundMessageCount += 1;
           try {
@@ -222,6 +238,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   }
 
   async function stop(): Promise<void> {
+    generation += 1;
     if (stopped) return;
     stopped = true;
     pendingInboundTelegramMessages = [];
@@ -337,6 +354,7 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
         [
           `pi-caretaker ${EXTENSION_VERSION}: listening on ${session.address}`,
           `queue: ${session.queue.size}/${session.queue.capacity} events held`,
+          `delivery: ${session.pump.hasFailed() ? "failed — restart required" : "operational"}`,
           `telegram: ${telegram !== undefined ? "configured" : "not configured — triage only"}`,
           ...managedTelegramStatus,
         ].join("\n"),

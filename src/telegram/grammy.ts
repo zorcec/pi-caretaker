@@ -118,9 +118,12 @@ export async function createTelegramAdapter(
   await bot.api.getMe();
 
   const handlers = new Set<TelegramMessageHandler>();
-  bot.on("message", (ctx) => {
+  const nonTextAcknowledgment = "pi-caretaker accepts text messages only — send text.";
+  bot.on("message", async (ctx) => {
     const chatMatch = String(ctx.chat?.id) === config.chatId;
-    const text = typeof ctx.message.text === "string" ? ctx.message.text : undefined;
+    const text = typeof ctx.message.text === "string"
+      ? ctx.message.text
+      : typeof ctx.message.caption === "string" ? ctx.message.caption : undefined;
     console.error(
       `[pi-caretaker] telegram received chatMatch=${chatMatch} textLength=${text?.length ?? 0}`,
     );
@@ -129,7 +132,12 @@ export async function createTelegramAdapter(
       return;
     }
     if (text === undefined) {
-      console.error("[pi-caretaker] telegram dropped reason=non_text");
+      console.error("[pi-caretaker] telegram non-text acknowledged");
+      try {
+        await bot.api.sendMessage(config.chatId, nonTextAcknowledgment);
+      } catch (error) {
+        lastError = describeError(error);
+      }
       return;
     }
     for (const handler of [...handlers]) {

@@ -76,6 +76,7 @@ const readline = require("node:readline");
 if (process.env.PI_CARETAKER_TEST_STARTED) {
   fs.writeFileSync(process.env.PI_CARETAKER_TEST_STARTED, "started");
 }
+if (process.env.PI_CARETAKER_TEST_CHILD_PID) fs.writeFileSync(process.env.PI_CARETAKER_TEST_CHILD_PID, String(process.pid));
 readline.createInterface({ input: process.stdin }).once("line", () => {
   http.createServer((request, response) => {
     if (request.url === "/health") {
@@ -104,11 +105,11 @@ async function unusedPort(): Promise<number> {
   return address.port;
 }
 
-async function spawnSleeper(): Promise<{
+async function spawnSleeper(scriptPath: string): Promise<{
   pid: number;
   exited: Promise<void>;
 }> {
-  const child = spawn("sleep", ["60"], { stdio: "ignore" });
+  const child = spawn(process.execPath, [scriptPath, "--supervise"], { stdio: "ignore" });
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", resolve);
     child.once("error", reject);
@@ -458,48 +459,87 @@ describe("stop pure functions", () => {
   });
 
   it("stops a live pid with SIGTERM and removes its pidfile", async () => {
-    const signals: Array<number | NodeJS.Signals> = [];
+    const signals: Array<[number, number | NodeJS.Signals]> = [];
     const removed: string[] = [];
     const result = await stopPreviousInstance({
       pidFile: "/fixture/pid",
       exists: () => true,
       readFile: () => "42\n",
       unlink: (path: string) => removed.push(path),
-      kill: (_pid: number, signal: number | NodeJS.Signals) => {
-        signals.push(signal);
-        if (signal === 0 && signals.filter((seen) => seen === 0).length > 1) {
+      kill: (pid: number, signal: number | NodeJS.Signals) => {
+        signals.push([pid, signal]);
+        if (signal === 0 && signals.filter((seen) => seen[1] === 0).length > 1) {
           throw Object.assign(new Error("gone"), { code: "ESRCH" });
         }
       },
       now: () => 0,
       sleep: async () => undefined,
+      readCmdline: () => "node /tmp/start.mjs --supervise",
     });
 
     expect(result).toEqual({ stopped: true, pid: 42, forced: false });
-    expect(signals).toEqual([0, "SIGTERM", 0]);
+    expect(signals).toEqual([[42, 0], [-42, "SIGTERM"], [42, 0]]);
+    expect(removed).toEqual(["/fixture/pid"]);
+  });
+
+  it("signals only when cmdline matches the caretaker supervisor identity", async () => {
+    const signals: Array<[number, number | NodeJS.Signals]> = [];
+    const removed: string[] = [];
+    const result = await stopPreviousInstance({
+      pidFile: "/fixture/pid",
+      exists: () => true,
+      readFile: () => "42",
+      readCmdline: () => "node /tmp/start.mjs --supervise",
+      unlink: (path: string) => removed.push(path),
+      kill: (pid: number, signal: number | NodeJS.Signals) => {
+        signals.push([pid, signal]);
+        if (signal === 0 && signals.filter((seen) => seen[1] === 0).length > 1) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+      },
+      now: () => 0,
+      sleep: async () => undefined,
+    });
+    expect(result).toEqual({ stopped: true, pid: 42, forced: false });
+    expect(signals).toEqual([[42, 0], [-42, "SIGTERM"], [42, 0]]);
+    expect(removed).toEqual(["/fixture/pid"]);
+  });
+
+  it("removes a foreign pidfile without calling kill", async () => {
+    const calls: Array<number | NodeJS.Signals> = [];
+    const removed: string[] = [];
+    const result = await stopPreviousInstance({
+      pidFile: "/fixture/pid",
+      exists: () => true,
+      readFile: () => "42",
+      readCmdline: () => "sleep 60",
+      unlink: (path: string) => removed.push(path),
+      kill: (_pid: number, signal: number | NodeJS.Signals) => calls.push(signal),
+    });
+    expect(result).toEqual({ stopped: false, reason: "stale-foreign" });
+    expect(calls).toEqual([]);
     expect(removed).toEqual(["/fixture/pid"]);
   });
 
   it("uses SIGKILL after the injected five-second TERM deadline", async () => {
     let now = 0;
-    const signals: Array<number | NodeJS.Signals> = [];
+    const signals: Array<[number, number | NodeJS.Signals]> = [];
     const removed: string[] = [];
     const result = await stopPreviousInstance({
       pidFile: "/fixture/pid",
       exists: () => true,
       readFile: () => "73",
       unlink: (path: string) => removed.push(path),
-      kill: (_pid: number, signal: number | NodeJS.Signals) => signals.push(signal),
+      kill: (pid: number, signal: number | NodeJS.Signals) => signals.push([pid, signal]),
       now: () => now,
       sleep: async (ms: number) => {
         now += ms;
       },
+      readCmdline: () => "node /tmp/start.mjs --supervise",
     });
 
     expect(result).toEqual({ stopped: true, pid: 73, forced: true });
-    expect(signals[0]).toBe(0);
-    expect(signals[1]).toBe("SIGTERM");
-    expect(signals.at(-1)).toBe("SIGKILL");
+    expect(signals[0]).toEqual([73, 0]);
+    expect(signals[1]).toEqual([-73, "SIGTERM"]);
+    expect(signals.at(-1)).toEqual([-73, "SIGKILL"]);
     expect(now).toBe(5000);
     expect(removed).toEqual(["/fixture/pid"]);
   });
@@ -568,6 +608,76 @@ describe("send-alert pure functions", () => {
 });
 
 describe("operator CLIs as child processes", () => {
+  it("supervisor respawns a child after one exit and remains alive", async () => {
+    const fixture = scriptFixture();
+    const marker = join(fixture.root, "child-runs");
+    const child = fixture.write("bin/fake-child", `#!/usr/bin/env node\nconst fs=require("node:fs"); const p=${JSON.stringify(marker)}; const n=fs.existsSync(p)?Number(fs.readFileSync(p,"utf8"))+1:1; fs.writeFileSync(p,String(n)); if(n>1)fs.writeFileSync(${JSON.stringify(join(fixture.root, "child-pid"))},String(process.pid)); console.log("child-marker"); if(n>1)setInterval(()=>{},1000);\n`);
+    chmodSync(child, 0o755);
+    const supervisor = spawn(process.execPath, [join(fixture.root, "scripts/start.mjs"), "--supervise"], { cwd: fixture.root, env: { ...process.env, PI_CARETAKER_TOKEN: "test", PI_CARETAKER_SUPERVISE_COMMAND: child, PI_CARETAKER_SUPERVISE_BACKOFF_MS: "10" }, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    supervisor.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    try {
+      const deadline = Date.now() + 5000;
+      while ((!stdout.includes("PID:") || !fixture.exists("child-runs") || Number(fixture.read("child-runs")) < 2) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(Number(fixture.read("child-runs"))).toBe(2);
+      expect((stdout.match(/PID:/g) ?? []).length).toBeGreaterThanOrEqual(2);
+      expect(supervisor.exitCode).toBeNull();
+    } finally {
+      supervisor.kill("SIGKILL");
+      await new Promise<void>((resolve) => supervisor.once("exit", () => resolve()));
+      if (fixture.exists("child-pid")) {
+        try { process.kill(Number(fixture.read("child-pid")), "SIGKILL"); } catch { /* Child already exited. */ }
+      }
+    }
+  });
+
+  it("supervisor gives up after five short-lived children and logs ERROR", async () => {
+    const fixture = scriptFixture();
+    const marker = join(fixture.root, "child-runs");
+    const child = fixture.write("bin/fake-child", `#!/usr/bin/env node\nconst fs=require("node:fs"); const p=${JSON.stringify(marker)}; fs.appendFileSync(p,"run\\n"); console.log("child-marker");\n`);
+    chmodSync(child, 0o755);
+    const supervisor = spawn(process.execPath, [join(fixture.root, "scripts/start.mjs"), "--supervise"], { cwd: fixture.root, env: { ...process.env, PI_CARETAKER_TOKEN: "test", PI_CARETAKER_SUPERVISE_COMMAND: child, PI_CARETAKER_SUPERVISE_BACKOFF_MS: "10" }, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    supervisor.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    supervisor.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    try {
+      await new Promise<void>((resolve) => supervisor.once("exit", () => resolve()));
+      expect(Number(fixture.read("child-runs").trim().split(/\r?\n/).length)).toBe(5);
+      expect(stdout).toContain("ERROR:Pi exited after 5 consecutive short-lived respawns");
+      expect(stderr).toContain("ERROR: Pi exited after 5 consecutive short-lived respawns");
+    } finally {
+      if (supervisor.exitCode === null) {
+        supervisor.kill("SIGKILL");
+        await new Promise<void>((resolve) => supervisor.once("exit", () => resolve()));
+      }
+    }
+  });
+
+  it("SIGTERM to supervisor terminates its live child", async () => {
+    const fixture = scriptFixture();
+    const childPid = join(fixture.root, "child-pid");
+    const child = fixture.write("bin/fake-child", `#!/usr/bin/env node\nconst fs=require("node:fs"); fs.writeFileSync(${JSON.stringify(childPid)},String(process.pid)); setInterval(()=>{},1000);\n`);
+    chmodSync(child, 0o755);
+    const supervisor = spawn(process.execPath, [join(fixture.root, "scripts/start.mjs"), "--supervise"], { cwd: fixture.root, env: { ...process.env, PI_CARETAKER_TOKEN: "test", PI_CARETAKER_SUPERVISE_COMMAND: child }, stdio: "ignore" });
+    let pid = 0;
+    try {
+      const deadline = Date.now() + 3000;
+      while (!fixture.exists("child-pid") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      pid = Number(fixture.read("child-pid"));
+      supervisor.kill("SIGTERM");
+      await new Promise<void>((resolve) => supervisor.once("exit", () => resolve()));
+      expect(() => process.kill(pid, 0)).toThrow();
+    } finally {
+      if (supervisor.exitCode === null) {
+        supervisor.kill("SIGKILL");
+        await new Promise<void>((resolve) => supervisor.once("exit", () => resolve()));
+      }
+      if (pid > 0) {
+        try { process.kill(pid, "SIGKILL"); } catch { /* Child already exited. */ }
+      }
+    }
+  });
   it("start.mjs exits 2 with instructions when no token exists", () => {
     const fixture = scriptFixture();
     const result = fixture.runScript("scripts/start.mjs", {
@@ -583,7 +693,8 @@ describe("operator CLIs as child processes", () => {
     const fixture = scriptFixture();
     fixture.write("dist/index.js", "// fixture bundle\n");
     const path = installFakePi(fixture);
-    const previous = await spawnSleeper();
+    const sleeper = fixture.write("start.mjs", "setInterval(() => {}, 1000);\n");
+    const previous = await spawnSleeper(sleeper);
     fixture.write("pi-caretaker.pid", `${previous.pid}\n`);
     const port = await unusedPort();
     try {
@@ -593,6 +704,7 @@ describe("operator CLIs as child processes", () => {
           PI_CARETAKER_TOKEN: "test-token",
           PI_CARETAKER_HOST: "127.0.0.1",
           PI_CARETAKER_PORT: String(port),
+          PI_CARETAKER_TEST_CHILD_PID: join(fixture.root, "fake-pi-pid"),
         },
       });
 
@@ -603,6 +715,14 @@ describe("operator CLIs as child processes", () => {
       expect(result.stdout).toContain(`Listener: http://127.0.0.1:${port}`);
       expect(result.stdout).toContain("Stop: pnpm stop");
       expect(fixture.read("pi-caretaker.pid")).toMatch(/^\d+\n$/);
+      const supervisorPid = Number(fixture.read("pi-caretaker.pid"));
+      const recordedCmdline = readFileSync(`/proc/${supervisorPid}/cmdline`, "utf8").replaceAll("\\0", " ");
+      expect(recordedCmdline).toContain("start.mjs");
+      expect(recordedCmdline).toContain("--supervise");
+      const childPid = Number(fixture.read("fake-pi-pid"));
+      fixture.runScript("scripts/stop.mjs");
+      expect(() => process.kill(supervisorPid, 0)).toThrow();
+      expect(() => process.kill(childPid, 0)).toThrow();
     } finally {
       fixture.runScript("scripts/stop.mjs");
     }

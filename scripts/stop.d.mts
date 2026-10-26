@@ -16,11 +16,12 @@ export interface StopPreviousInstanceDeps {
   now?: () => number;
   timeoutMs?: number;
   pollIntervalMs?: number;
+  readCmdline?: (pid: number) => string;
 }
 
 export type StopPreviousInstanceResult =
   | { stopped: true; pid: number; forced: boolean }
-  | { stopped: false; reason: "missing" | "invalid" | "stale" };
+  | { stopped: false; reason: "missing" | "invalid" | "stale" | "stale-foreign" };
 
 export function stopPreviousInstance(
   deps: StopPreviousInstanceDeps,

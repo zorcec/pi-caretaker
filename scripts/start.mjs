@@ -204,23 +204,46 @@ async function supervisorMain() {
   }
   const { openSync } = await import("node:fs");
   const logFd = openSync(plan.logFile, "a");
-  const child = spawn(plan.command, plan.args, {
-    cwd: root,
-    env: plan.env,
-    stdio: ["pipe", logFd, logFd],
-  });
-  const bootError = await new Promise((resolve) => {
-    child.on("error", resolve);
-    child.on("spawn", () => resolve(null));
-  });
-  if (bootError) {
-    console.log(`ERROR:Could not start Pi: ${bootError.message}`);
-    process.exit(1);
+  let child;
+  let stopping = false;
+  const terminate = () => {
+    stopping = true;
+    if (child && child.exitCode === null) child.kill("SIGTERM");
+  };
+  process.once("SIGTERM", terminate);
+  process.once("SIGINT", terminate);
+  let consecutiveShort = 0;
+  let delay = Number(process.env.PI_CARETAKER_SUPERVISE_BACKOFF_MS ?? 1000);
+  try {
+    while (!stopping) {
+      const began = Date.now();
+      const command = process.env.PI_CARETAKER_SUPERVISE_COMMAND ?? plan.command;
+      child = spawn(command, plan.args, { cwd: root, env: plan.env, stdio: ["pipe", logFd, logFd] });
+      const outcome = await new Promise((resolve) => {
+        child.once("error", (error) => resolve({ error }));
+        child.once("spawn", () => {
+          for (const line of buildRpcBootInput()) child.stdin.write(`${line}\n`);
+          console.log(`PID:${child.pid}`);
+        });
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+      });
+      if (stopping) break;
+      const lived = Date.now() - began;
+      consecutiveShort = lived < 60_000 ? consecutiveShort + 1 : 0;
+      if (consecutiveShort >= 5 || outcome.error) {
+        const message = outcome.error ? `Could not start Pi: ${outcome.error.message}` : `Pi exited after ${consecutiveShort} consecutive short-lived respawns`;
+        console.log(`ERROR:${message}`);
+        console.error(`[pi-caretaker] ERROR: ${message}`);
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, 30_000);
+    }
+  } finally {
+    process.removeListener("SIGTERM", terminate);
+    process.removeListener("SIGINT", terminate);
+    if (child && child.exitCode === null) child.kill("SIGTERM");
   }
-  for (const line of buildRpcBootInput()) child.stdin.write(`${line}\n`);
-  console.log(`PID:${child.pid}`);
-  await new Promise((resolve) => child.on("exit", resolve));
-  process.exit(0);
 }
 
 async function main() {
@@ -245,7 +268,14 @@ async function main() {
   if (previous.stopped) {
     console.log(`Stopped previous caretaker instance (PID ${previous.pid}).`);
   }
-  const listenerUrl = new URL(plan.healthUrl);
+  let listenerUrl;
+  try {
+    listenerUrl = new URL(plan.healthUrl);
+  } catch {
+    console.error("Resolved health URL is not a valid URL; refusing to boot.");
+    process.exitCode = 1;
+    return;
+  }
   const listenerHost = listenerUrl.hostname.replace(/^\[|\]$/g, "");
   const listenerPort = Number(listenerUrl.port || plan.env.PI_CARETAKER_PORT || "8787");
   if (!(await waitForPortFree(listenerHost, listenerPort))) {
@@ -323,7 +353,8 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  writeFileSync(plan.pidFile, `${pid}\n`);
+  // The stable pidfile target is the supervisor, which survives child respawns.
+  writeFileSync(plan.pidFile, `${supervisor.pid}\n`);
   const host = process.env.PI_CARETAKER_HOST ?? "127.0.0.1";
   const port = process.env.PI_CARETAKER_PORT ?? "8787";
   console.log(`PID: ${pid}\nListener: http://${host}:${port}\nLog: ${plan.logFile}\nStop: pnpm stop`);

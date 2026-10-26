@@ -3,7 +3,7 @@
 ## Decision
 `202 Accepted` means the event entered the in-memory queue — nothing more.
 Only `message` is required; severity is advisory context, and oversized,
-unauthorized, or overloaded requests get real error codes, never a fake 202.
+unauthorized, overloaded, or requests after the delivery pump has failed get real error codes, never a fake 202. A failed pump returns 503 until process restart.
 ## Why
 Without this, operators read 202 as "delivered to Telegram", a guarantee V1
 cannot keep with a memory-only queue that loses everything on restart.

@@ -188,13 +188,13 @@ describe("grammY Telegram adapter", () => {
     }
   });
 
-  it("logs each message and explicitly drops chat mismatches and non-text", async () => {
+  it("acknowledges paired non-text updates, forwards captions, and stays silent for strangers", async () => {
     const lines: string[] = [];
     vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
       lines.push(args.join(" "));
     });
     let polls = 0;
-    const { fetch } = stubFetch((url) => {
+    const { fetch, calls } = stubFetch((url) => {
       if (url.endsWith("/getMe")) return okGetMe;
       if (url.endsWith("/deleteWebhook")) return { ok: true, result: true };
       if (url.endsWith("/getUpdates")) {
@@ -226,13 +226,20 @@ describe("grammY Telegram adapter", () => {
               message: {
                 message_id: 3,
                 chat: { id: 42, type: "private" },
-                text: "hello",
+                photo: [{ file_id: "caption-photo", file_unique_id: "caption-unique", width: 1, height: 1 }],
+                caption: "photo caption",
                 date: 1,
               },
+            },
+            {
+              update_id: 4,
+              message: { message_id: 4, chat: { id: 42, type: "private" }, text: "hello", date: 1 },
             },
           ],
         };
       }
+      if (url.endsWith("/sendMessage")) return { ok: true, result: { message_id: 8 } };
+      if (url.endsWith("/sendMessage")) return { ok: true, result: { message_id: 8 } };
       throw new Error(`unexpected call: ${url}`);
     });
     const adapter = await createTelegramAdapter(
@@ -244,16 +251,20 @@ describe("grammY Telegram adapter", () => {
       adapter.onMessage((text) => seen.push(text));
       adapter.start();
       const start = Date.now();
-      while (seen.length === 0 && Date.now() - start < 3000) {
+      while ((seen.length < 2 || calls.filter((call) => call.url.endsWith("/sendMessage")).length < 1) && Date.now() - start < 3000) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
 
-      expect(seen).toEqual(["hello"]);
+      expect(seen).toEqual(["photo caption", "hello"]);
+      const sends = calls.filter((call) => call.url.endsWith("/sendMessage"));
+      expect(sends).toHaveLength(1);
+      expect(sends[0]?.body).toEqual({ chat_id: "42", text: "pi-caretaker accepts text messages only — send text." });
       expect(lines.map((line) => line.slice(line.indexOf("telegram ")))).toEqual([
         "telegram received chatMatch=false textLength=21",
         "telegram dropped reason=chat_mismatch",
         "telegram received chatMatch=true textLength=0",
-        "telegram dropped reason=non_text",
+        "telegram non-text acknowledged",
+        "telegram received chatMatch=true textLength=13",
         "telegram received chatMatch=true textLength=5",
       ]);
       expect(lines.join("\n")).not.toContain("private stranger text");

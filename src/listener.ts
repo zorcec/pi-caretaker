@@ -29,6 +29,7 @@ export interface WebhookListenerOptions {
   version: string;
   /** Queue admitted envelopes enter; full maps to 503, never 202. */
   queue: EventQueue<EventEnvelope>;
+  isOperational?: () => boolean;
 }
 
 /** Health payload keys — exactly these three, nothing more. */
@@ -96,12 +97,12 @@ function readCappedBody(request: IncomingMessage): Promise<Buffer | undefined> {
 export function createWebhookListener(
   options: WebhookListenerOptions,
 ): Server {
-  const { token, version, queue } = options;
+  const { token, version, queue, isOperational = () => true } = options;
   if (typeof token !== "string" || token.length === 0) {
     throw new Error("webhook listener requires a non-empty bearer token");
   }
   return createServer((request, response) => {
-    void handleRequest(request, response, token, version, queue).catch(() => {
+    void handleRequest(request, response, token, version, queue, isOperational).catch(() => {
       if (!response.headersSent) {
         sendJson(response, 500, { error: "internal error" });
       }
@@ -115,6 +116,7 @@ async function handleRequest(
   token: string,
   version: string,
   queue: EventQueue<EventEnvelope>,
+  isOperational: () => boolean,
 ): Promise<void> {
   const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
 
@@ -137,6 +139,11 @@ async function handleRequest(
       return;
     }
     const authorization = request.headers.authorization;
+    if (!isOperational()) {
+      sendJson(response, 503, { error: "delivery failed; restart required" });
+      request.resume();
+      return;
+    }
     // Content-Type enforcement (owner decision 2026-10-25): this endpoint
     // only speaks JSON. Checked after auth (no parsing happens here) and
     // before buffering a single byte, so a wrong-type body costs nothing.

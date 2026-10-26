@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { request as httpRequest } from "node:http";
-import { createEventQueue } from "../../src/queue.js";
+import { createEventQueue, startDelivery } from "../../src/queue.js";
 import { createWebhookListener } from "../../src/listener.js";
 import {
   MAX_EVENT_BODY_BYTES,
@@ -105,6 +105,39 @@ async function postEvents(
 }
 
 describe("webhook listener (POST /events, GET /health)", () => {
+  it("returns 503 after delivery failure but accepts the first event and a healthy listener", async () => {
+    const failedQueue = createEventQueue<EventEnvelope>({ capacity: 4 });
+    let releaseFailure!: () => void;
+    const failureTrigger = new Promise<void>((resolve) => { releaseFailure = resolve; });
+    const pump = startDelivery(failedQueue, async () => {
+      releaseFailure();
+      throw new Error("consumer failed");
+    });
+    server = createWebhookListener({
+      token: TOKEN,
+      version: "9.9.9-test",
+      queue: failedQueue,
+      isOperational: () => !pump.hasFailed(),
+    });
+    await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+    const { port } = server?.address() as AddressInfo;
+    const url = `http://127.0.0.1:${port}`;
+    const first = await postEvents(url, JSON.stringify({ message: "first" }), `Bearer ${TOKEN}`);
+    expect(first.status).toBe(202);
+    await failureTrigger;
+    await expect(pump.drained()).rejects.toThrow("consumer failed");
+    const rejected = await postEvents(url, JSON.stringify({ message: "second" }), `Bearer ${TOKEN}`);
+    expect(rejected.status).toBe(503);
+    expect(rejected.json).toEqual({ error: "delivery failed; restart required" });
+
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    server = createWebhookListener({ token: TOKEN, version: "9.9.9-test", queue: createEventQueue<EventEnvelope>({ capacity: 4 }) });
+    await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+    const healthyPort = (server?.address() as AddressInfo).port;
+    const healthy = await postEvents(`http://127.0.0.1:${healthyPort}`, JSON.stringify({ message: "healthy" }), `Bearer ${TOKEN}`);
+    expect(healthy.status).toBe(202);
+  });
   it("refuses to construct with a blank token — no open listener by misconfiguration", () => {
     const queue = createEventQueue<EventEnvelope>({ capacity: 1 });
 

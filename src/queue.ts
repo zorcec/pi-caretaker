@@ -46,6 +46,8 @@ export interface SignallingQueue<T> extends EventQueue<T> {
 export type QueueConsumer<T> = (event: QueuedEvent<T>) => Promise<void>;
 
 export interface DeliveryController {
+  /** True once the consumer has failed; failure is terminal until restart. */
+  hasFailed(): boolean;
   /** Halt after the in-flight delivery finishes; the rest stays queued. */
   stop(): void;
   /**
@@ -172,6 +174,9 @@ export function startDelivery<T>(
   };
   void loop();
   return {
+    hasFailed(): boolean {
+      return hasFailed;
+    },
     stop(): void {
       stopped = true;
       wake?.();
