@@ -38,10 +38,12 @@ pnpm build     # dist/ via tsup
 
 Create a repo-root `secrets.env` containing `PI_CARETAKER_TOKEN=<your token>`
 (generate one with `openssl rand -hex 24`). Operator environment variables take
-precedence, and token values are never printed. Start Pi and the caretaker in
-the background with `pnpm start`; use `pnpm start -- --foreground` for attached
-debugging, and stop it with `pnpm stop`. Output is appended to
-`pi-caretaker.log` in the repository root. Trigger a fake host-dark alert with
+precedence, and token values are never printed. `pnpm start` runs Pi under a
+background supervisor and waits for `/health` before writing the pidfile and
+printing the listener details. Use `pnpm start -- --foreground` for attached
+interactive debugging, and stop the background service with `pnpm stop`. Output
+is appended to `pi-caretaker.log` in the repository root. Trigger a fake
+host-dark alert with
 `pnpm send:alert [message]`. The listener defaults to `127.0.0.1:8787`; use
 `PI_CARETAKER_HOST` and `PI_CARETAKER_PORT` to override it. Run `send:alert`
 with the same environment as the listener (or no overrides); both scripts read

@@ -43,13 +43,16 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
   }
   const host = env.PI_CARETAKER_HOST ?? "127.0.0.1";
   const port = env.PI_CARETAKER_PORT ?? "8787";
+  // RPC mode, not the TUI: with redirected stdio a bare `pi` falls into
+  // print mode and exits without ever starting a session. RPC stays up.
+  // --foreground keeps the plain extension load for interactive debugging.
+  const args = foreground
+    ? ["--name", "caretaker", "--extension", "./dist/index.js"]
+    : ["--mode", "rpc", "--name", "caretaker", "--extension", "./dist/index.js"];
   return {
     ok: true,
     command: "pi",
-    // RPC mode, not the TUI: with redirected stdio a bare `pi` falls into
-    // print mode and exits without ever starting a session. RPC stays up
-    // and boots the session on the new_session command below.
-    args: ["--mode", "rpc", "--name", "caretaker", "--extension", "./dist/index.js"],
+    args,
     foreground,
     detached: !foreground,
     logFile: resolve(root, "pi-caretaker.log"),
@@ -68,6 +71,41 @@ export function resolveStartConfig({ env, secretsText, hasDist, foreground = fal
  */
 export function buildRpcBootInput() {
   return ['{"type":"new_session"}'];
+}
+
+/**
+ * Parse the supervisor's first stdout line. `PID:<n>` carries the Pi
+ * process id; `ERROR:<message>` carries a spawn failure. Anything else
+ * is protocol drift and must fail loudly, never be mistaken for a PID.
+ */
+export function parseSupervisorLine(line) {
+  const text = String(line).trim();
+  const pid = /^PID:(\d+)$/.exec(text);
+  if (pid) return { kind: "pid", pid: Number(pid[1]) };
+  if (text.startsWith("ERROR:")) return { kind: "error", message: text.slice(6).trim() };
+  return null;
+}
+
+/**
+ * Read the supervisor's first stdout line with a deadline. Injectable
+ * timer keeps unit tests instant and network-free.
+ */
+export function waitForFirstLine(stream, { timeoutMs = 15000, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout } = {}) {
+  return new Promise((resolve) => {
+    let buffer = "";
+    const done = (value) => {
+      clearTimeoutFn(timer);
+      stream.removeListener("data", onData);
+      resolve(value);
+    };
+    const timer = setTimeoutFn(() => done(null), timeoutMs);
+    const onData = (chunk) => {
+      buffer += String(chunk);
+      const end = buffer.indexOf("\n");
+      if (end >= 0) done(buffer.slice(0, end));
+    };
+    stream.on("data", onData);
+  });
 }
 
 /**
@@ -92,7 +130,47 @@ export async function waitForHealth(
   }
 }
 
+async function supervisorMain() {
+  // Long-lived pipe holder: spawns Pi, feeds the RPC boot lines, and keeps
+  // stdin open for the life of the process. Pi shuts down on stdin EOF
+  // (see runRpcMode), so exiting here would kill a healthy session.
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const plan = resolveStartConfig({
+    env: process.env,
+    secretsText: "",
+    hasDist: true,
+    root,
+  });
+  if (!plan.ok) {
+    console.log(`ERROR:${plan.message}`);
+    process.exit(plan.exitCode);
+  }
+  const { openSync } = await import("node:fs");
+  const logFd = openSync(plan.logFile, "a");
+  const child = spawn(plan.command, plan.args, {
+    cwd: root,
+    env: plan.env,
+    stdio: ["pipe", logFd, logFd],
+  });
+  const bootError = await new Promise((resolve) => {
+    child.on("error", resolve);
+    child.on("spawn", () => resolve(null));
+  });
+  if (bootError) {
+    console.log(`ERROR:Could not start Pi: ${bootError.message}`);
+    process.exit(1);
+  }
+  for (const line of buildRpcBootInput()) child.stdin.write(`${line}\n`);
+  console.log(`PID:${child.pid}`);
+  await new Promise((resolve) => child.on("exit", resolve));
+  process.exit(0);
+}
+
 async function main() {
+  if (process.argv.includes("--supervise")) {
+    await supervisorMain();
+    return;
+  }
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const envFile = resolve(root, "secrets.env");
   const plan = resolveStartConfig({
@@ -123,41 +201,84 @@ async function main() {
   }
   const { openSync } = await import("node:fs");
   const logFd = openSync(plan.logFile, "a");
-  const child = spawn(plan.command, plan.args, {
+  const supervisor = spawn(process.execPath, [fileURLToPath(import.meta.url), "--supervise"], {
     cwd: root,
     env: plan.env,
     detached: true,
-    stdio: ["pipe", logFd, logFd],
+    stdio: ["ignore", "pipe", logFd],
   });
-  const bootError = await new Promise((resolve) => {
-    child.on("error", resolve);
-    child.on("spawn", () => resolve(null));
-  });
-  if (bootError) {
-    console.error(`Could not start Pi: ${bootError.message}`);
-    process.exitCode = 1;
-    return;
-  }
-  for (const line of buildRpcBootInput()) child.stdin.write(`${line}\n`);
-  child.stdin.end();
-  child.unref();
-  const ready = await waitForHealth(plan.healthUrl);
-  if (!ready) {
+  supervisor.unref();
+  // Ctrl-C during boot must not orphan the pair: take the group down.
+  const abortBoot = () => {
     try {
-      process.kill(child.pid, "SIGKILL");
+      process.kill(-supervisor.pid, "SIGKILL");
     } catch {
-      // Already gone — the log below says where to look.
+      try {
+        supervisor.kill("SIGKILL");
+      } catch {
+        // Already gone.
+      }
     }
-    console.error(
-      `Pi did not become ready in time. See ${plan.logFile} for startup diagnostics.`,
-    );
+    process.exit(130);
+  };
+  process.once("SIGINT", abortBoot);
+  const firstLine = await waitForFirstLine(supervisor.stdout, { timeoutMs: 15000 });
+  // The detached child is intentionally long-lived; its pipe must not keep
+  // this short-lived launcher alive after the protocol line is consumed.
+  supervisor.stdout.unref();
+  const parsed = firstLine === null ? null : parseSupervisorLine(firstLine);
+  if (parsed === null || parsed.kind !== "pid") {
+    try {
+      process.kill(supervisor.pid, "SIGKILL");
+    } catch {
+      // Already gone — the supervisor's own error line (if any) is above.
+    }
+    if (parsed !== null && parsed.kind === "error") {
+      console.error(`Pi failed to start: ${parsed.message}`);
+    } else {
+      console.error(
+        "Pi supervisor reported nothing usable. " +
+          `See ${plan.logFile} for startup diagnostics.`,
+      );
+    }
     process.exitCode = 1;
     return;
   }
-  writeFileSync(plan.pidFile, `${child.pid}\n`);
+  const pid = parsed.pid;
+  try {
+    await waitForHealthOrTimeout(plan, pid, supervisor.pid);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+    return;
+  }
+  writeFileSync(plan.pidFile, `${pid}\n`);
   const host = process.env.PI_CARETAKER_HOST ?? "127.0.0.1";
   const port = process.env.PI_CARETAKER_PORT ?? "8787";
-  console.log(`PID: ${child.pid}\nListener: http://${host}:${port}\nLog: ${plan.logFile}\nStop: pnpm stop`);
+  console.log(`PID: ${pid}\nListener: http://${host}:${port}\nLog: ${plan.logFile}\nStop: pnpm stop`);
+}
+
+/**
+ * Poll the listener until it answers; on timeout kill the whole
+ * supervisor tree (it holds no session worth keeping) and fail loudly.
+ */
+async function waitForHealthOrTimeout(plan, pid, supervisorPid) {
+  const ready = await waitForHealth(plan.healthUrl);
+  if (ready) return;
+  try {
+    // The detached supervisor is the process-group leader; its child Pi
+    // inherits that group, so kill both using the supervisor's PID.
+    process.kill(-supervisorPid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
+  throw new Error(
+    `Pi did not become ready in time. See ${plan.logFile} for startup diagnostics.`,
+  );
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

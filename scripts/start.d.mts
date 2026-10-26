@@ -41,6 +41,21 @@ export function resolveStartConfig(options: {
 
 export function buildRpcBootInput(): string[];
 
+export type SupervisorLine =
+  | { kind: "pid"; pid: number }
+  | { kind: "error"; message: string };
+
+export function parseSupervisorLine(line: string): SupervisorLine | null;
+
+export function waitForFirstLine(
+  stream: NodeJS.EventEmitter,
+  options?: {
+    timeoutMs?: number;
+    setTimeoutFn?: (fn: () => void, ms: number) => unknown;
+    clearTimeoutFn?: (id: unknown) => void;
+  },
+): Promise<string | null>;
+
 export function waitForHealth(
   url: string,
   deps?: WaitForHealthDeps,

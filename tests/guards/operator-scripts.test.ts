@@ -1,10 +1,13 @@
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildRpcBootInput,
   parseSecretsEnv,
+  parseSupervisorLine,
   resolveStartConfig,
+  waitForFirstLine,
   waitForHealth,
 } from "../../scripts/start.mjs";
 import { parsePidFile, resolveStopPlan } from "../../scripts/stop.mjs";
@@ -70,6 +73,58 @@ describe("parseSecretsEnv", () => {
 
   it("parses empty input to no variables", () => {
     expect(parseSecretsEnv("")).toEqual({});
+  });
+});
+
+describe("supervisor protocol", () => {
+  it("parses PID and ERROR lines and rejects protocol noise", () => {
+    expect(parseSupervisorLine("PID:123\n")).toEqual({ kind: "pid", pid: 123 });
+    expect(parseSupervisorLine("ERROR:Could not start Pi")).toEqual({
+      kind: "error",
+      message: "Could not start Pi",
+    });
+    expect(parseSupervisorLine("garbage")).toBeNull();
+  });
+
+  it("reads a line split across chunks and ignores later lines", async () => {
+    const stream = new EventEmitter();
+    let timerCleared: unknown;
+    const pending = waitForFirstLine(stream, {
+      setTimeoutFn: () => "timer-handle",
+      clearTimeoutFn: (timer) => {
+        timerCleared = timer;
+      },
+    });
+    stream.emit("data", Buffer.from("PID:12"));
+    stream.emit("data", Buffer.from("3\nignored\n"));
+
+    await expect(pending).resolves.toBe("PID:123");
+    expect(timerCleared).toBe("timer-handle");
+  });
+
+  it("returns null when its injected timer expires", async () => {
+    const stream = new EventEmitter();
+    let expire: (() => void) | undefined;
+    let timeoutMs: number | undefined;
+    let timerCleared: unknown;
+    const pending = waitForFirstLine(stream, {
+      timeoutMs: 321,
+      setTimeoutFn: (callback, ms) => {
+        expire = callback;
+        timeoutMs = ms;
+        return "timer-handle";
+      },
+      clearTimeoutFn: (timer) => {
+        timerCleared = timer;
+      },
+    });
+
+    expect(timeoutMs).toBe(321);
+    expect(expire).toBeTypeOf("function");
+    expire?.();
+    await expect(pending).resolves.toBeNull();
+    expect(timerCleared).toBe("timer-handle");
+    expect(stream.listenerCount("data")).toBe(0);
   });
 });
 
@@ -162,9 +217,19 @@ describe("resolveStartConfig", () => {
     ).resolves.toBe(false);
   });
 
-  it("resolves attached mode explicitly", () => {
+  it("resolves attached mode explicitly without RPC arguments", () => {
     const plan = resolveStartConfig({ env: { PI_CARETAKER_TOKEN: "t" }, hasDist: true, root: "/repo", foreground: true });
-    expect(plan).toMatchObject({ ok: true, foreground: true, detached: false, logFile: "/repo/pi-caretaker.log", pidFile: "/repo/pi-caretaker.pid" });
+    expect(plan).toMatchObject({
+      ok: true,
+      command: "pi",
+      args: ["--name", "caretaker", "--extension", "./dist/index.js"],
+      foreground: true,
+      detached: false,
+      logFile: "/repo/pi-caretaker.log",
+      pidFile: "/repo/pi-caretaker.pid",
+      healthUrl: "http://127.0.0.1:8787/health",
+    });
+    if (plan.ok) expect(plan.args).not.toContain("rpc");
   });
 
   it("treats an omitted secrets file as empty", () => {
