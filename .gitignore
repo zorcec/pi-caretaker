@@ -5,3 +5,4 @@ coverage/
 *.log
 pi-caretaker.pid
 secrets.env
+pi-caretaker.log
