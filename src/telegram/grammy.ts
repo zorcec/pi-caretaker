@@ -23,9 +23,16 @@ export interface TelegramTransportConfig {
 export interface TelegramTransportDeps {
   /**
    * HTTP fetch implementation. Defaults to grammY's (node-fetch under
-   * Node). Tests inject a stub here — no global mocking, no network.
+   * Node). Unit tests inject a stub here — no global mocking, no network.
    */
   fetch?: typeof fetch;
+  /**
+   * Base URL of the Bot API. Defaults to grammY's
+   * (https://api.telegram.org). E2e tests point it at a loopback mock
+   * server — grammY's documented apiRoot pattern — so the real client
+   * speaks real HTTP to a fake Telegram. Never set in production.
+   */
+  apiRoot?: string;
 }
 
 /**
@@ -80,10 +87,12 @@ export async function createTelegramAdapter(
       throw error;
     }
   };
-  const bot = new Bot(
-    config.botToken,
-    trackedFetch !== undefined ? { client: { fetch: trackedFetch } } : {},
-  );
+  const bot = new Bot(config.botToken, {
+    client: {
+      ...(trackedFetch !== undefined ? { fetch: trackedFetch } : {}),
+      ...(deps?.apiRoot !== undefined ? { apiRoot: deps.apiRoot } : {}),
+    },
+  });
   // Validate now: a dead token must fail here, not on the first notify.
   await bot.api.getMe();
 

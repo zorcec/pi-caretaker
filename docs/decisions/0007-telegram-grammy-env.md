@@ -23,3 +23,4 @@ inbound set beyond the paired chat, or adding a second transport, needs a
 new ADR.
 ## Pins
 - `tests/grammy.test.ts`
+- `tests/e2e/telegram-mock.e2e.test.ts`
