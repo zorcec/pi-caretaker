@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import piCaretaker, {
   EXTENSION_VERSION,
   getHealth,
@@ -14,6 +14,7 @@ import {
   startedPort,
   testEnv,
   waitForNotifies,
+  waitForTurns,
 } from "./setup/fake-pi.js";
 import { startMockTelegram } from "./setup/telegram-mock.js";
 
@@ -29,6 +30,7 @@ const savedEnv = snapshotEnv();
 
 afterEach(() => {
   restoreEnv(savedEnv);
+  vi.restoreAllMocks();
 });
 
 describe("pi-caretaker extension entry", () => {
@@ -38,6 +40,8 @@ describe("pi-caretaker extension entry", () => {
     piCaretaker(fake.api);
 
     expect([...fake.handlers.keys()].sort()).toEqual([
+      "agent_end",
+      "before_agent_start",
       "session_shutdown",
       "session_start",
     ]);
@@ -92,8 +96,10 @@ describe("pi-caretaker extension entry", () => {
   it("sends nothing to Telegram for an ordinary event — silence is observable", async () => {
     testEnv();
     const fake = createFakePi();
+    let notifications = 0;
     const telegram: TelegramAdapter = {
       notify: async () => {
+        notifications += 1;
         throw new Error("must not be called");
       },
       onMessage: (): void => undefined,
@@ -107,6 +113,11 @@ describe("pi-caretaker extension entry", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(fake.sent).toHaveLength(1);
+    await fake.handlers.get("agent_end")?.(
+      { messages: [{ role: "assistant", content: [{ type: "text", text: "background answer" }] }] },
+      ctx,
+    );
+    expect(notifications).toBe(0);
 
     await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
@@ -431,6 +442,235 @@ describe("pi-caretaker extension entry", () => {
     expect(inbound[0]?.options).toEqual({ deliverAs: "followUp" });
 
     await fake.handlers.get("session_shutdown")?.({}, ctx);
+  });
+
+  it("does not misrelay an active webhook answer when a paired message is queued", async () => {
+    testEnv({
+      PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
+      PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+    });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi();
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies);
+      const port = await startedPort(fake, ctx);
+      await postEvent(port, { message: "background webhook event" });
+      await waitForTurns(fake, 1);
+      const webhookPrompt = fake.sent[0]?.content;
+      if (webhookPrompt === undefined) throw new Error("webhook turn was not submitted");
+      await fake.handlers.get("before_agent_start")?.(
+        { messageType: "user", prompt: webhookPrompt },
+        ctx,
+      );
+
+      mock.enqueueUpdates([
+        {
+          update_id: 1,
+          message: {
+            message_id: 1,
+            chat: { id: 42, type: "private" },
+            text: "paired follow-up",
+            date: 1,
+          },
+        },
+      ]);
+      await waitForTurns(fake, 2);
+      expect(fake.sent[1]?.content).toBe("paired follow-up");
+
+      await fake.handlers.get("agent_end")?.(
+        { messages: [{ role: "assistant", content: [{ type: "text", text: "webhook answer" }] }] },
+        ctx,
+      );
+      expect(mock.sends).toEqual([]);
+
+      await fake.handlers.get("before_agent_start")?.(
+        { messageType: "user", prompt: "paired follow-up" },
+        ctx,
+      );
+      await fake.handlers.get("agent_end")?.(
+        { messages: [{ role: "assistant", content: [{ type: "text", text: "paired answer" }] }] },
+        ctx,
+      );
+      expect(mock.sends).toEqual([{ chat_id: "42", text: "paired answer" }]);
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("relays the inbound turn's final assistant text through notify only", async () => {
+    testEnv({
+      PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
+      PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+    });
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.join(" "));
+    });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi();
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies);
+      await startedPort(fake, ctx);
+      mock.enqueueUpdates([
+        {
+          update_id: 1,
+          message: {
+            message_id: 1,
+            chat: { id: 42, type: "private" },
+            text: "inbound prompt",
+            date: 1,
+          },
+        },
+      ]);
+      const start = Date.now();
+      while (
+        !fake.sent.some((turn) => turn.content === "inbound prompt") &&
+        Date.now() - start < 3000
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(fake.sent.filter((turn) => turn.content === "inbound prompt")).toHaveLength(1);
+
+      const answer = "final assistant answer ".repeat(300);
+      await fake.handlers.get("before_agent_start")?.(
+        { messageType: "user", prompt: "inbound prompt" },
+        ctx,
+      );
+      await fake.handlers.get("agent_end")?.(
+        { messages: [{ role: "assistant", content: [{ type: "text", text: answer }] }] },
+        ctx,
+      );
+      const sendStart = Date.now();
+      while (mock.sends.length === 0 && Date.now() - sendStart < 3000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(mock.sends).toHaveLength(1);
+      expect(mock.sends[0]?.chat_id).toBe("42");
+      expect(mock.sends[0]?.text).toBe(answer.slice(0, 4096));
+      expect(mock.sends[0]?.text.length).toBe(4096);
+
+      await fake.handlers.get("agent_end")?.(
+        { messages: [{ role: "assistant", content: [{ type: "text", text: "later answer" }] }] },
+        ctx,
+      );
+      expect(mock.sends).toHaveLength(1);
+      const received = lines.findIndex((line) => line.includes("telegram received chatMatch=true textLength=14"));
+      const forwarded = lines.findIndex((line) => line.includes("telegram forwarded"));
+      expect(received).toBeGreaterThanOrEqual(0);
+      expect(forwarded).toBeGreaterThan(received);
+      expect(lines.join("\n")).not.toContain("inbound prompt");
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("logs reply delivery failures without throwing into agent_end", async () => {
+    testEnv({
+      PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
+      PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+    });
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.join(" "));
+    });
+    const answer = "private final answer";
+    let polls = 0;
+    const { fetch } = stubTelegramFetch((url) => {
+      if (url.endsWith("/getMe")) return telegramGetMe;
+      if (url.endsWith("/deleteWebhook")) return { ok: true, result: true };
+      if (url.endsWith("/getUpdates")) {
+        polls += 1;
+        return {
+          ok: true,
+          result: polls === 1
+            ? [{
+                update_id: 1,
+                message: {
+                  message_id: 1,
+                  chat: { id: 42, type: "private" },
+                  text: "inbound",
+                  date: 1,
+                },
+              }]
+            : [],
+        };
+      }
+      if (url.endsWith("/sendMessage")) {
+        return { ok: false, error_code: 400, description: `failed TEST:token ${answer}` };
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const fake = createFakePi();
+    piCaretaker(fake.api, { fetch });
+    const ctx = fakeContext(fake.notifies);
+    await startedPort(fake, ctx);
+    const start = Date.now();
+    while (!fake.sent.some((turn) => turn.content === "inbound") && Date.now() - start < 3000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(fake.sent.some((turn) => turn.content === "inbound")).toBe(true);
+    await fake.handlers.get("before_agent_start")?.(
+      { messageType: "user", prompt: "inbound" },
+      ctx,
+    );
+    await expect(fake.handlers.get("agent_end")?.(
+      { messages: [{ role: "assistant", content: [{ type: "text", text: answer }] }] },
+      ctx,
+    )).resolves.toBeUndefined();
+    const failure = lines.find((line) => line.includes("notify-failed")) ?? "";
+    expect(failure).toContain("failed");
+    expect(failure).not.toContain("TEST:token");
+    expect(failure).not.toContain(answer);
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
+  });
+
+  it("logs failed inbound submissions without exposing the message or token", async () => {
+    testEnv({
+      PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
+      PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
+    });
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.join(" "));
+    });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi();
+      (fake.api as unknown as { sendUserMessage: (content: string) => void }).sendUserMessage =
+        (content) => {
+          throw new Error(`submit failed with TEST:token and ${content}`);
+        };
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies);
+      await startedPort(fake, ctx);
+      mock.enqueueUpdates([
+        {
+          update_id: 1,
+          message: {
+            message_id: 1,
+            chat: { id: 42, type: "private" },
+            text: "sensitive inbound payload",
+            date: 1,
+          },
+        },
+      ]);
+      const start = Date.now();
+      while (!lines.some((line) => line.includes("sendUserMessage-failed")) && Date.now() - start < 3000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const failure = lines.find((line) => line.includes("sendUserMessage-failed")) ?? "";
+      expect(failure).toContain("submit failed");
+      expect(failure).not.toContain("TEST:token");
+      expect(failure).not.toContain("sensitive inbound payload");
+      expect(fake.sent).toEqual([]);
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally {
+      await mock.close();
+    }
   });
 
   it("keeps the session up when Telegram rejects the token, loudly", async () => {

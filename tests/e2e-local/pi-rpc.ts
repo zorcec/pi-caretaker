@@ -119,6 +119,8 @@ export interface RealPi {
   stderrTail(lines?: number): string[];
   /** get_messages data.messages as returned by Pi. */
   messages(): Promise<Record<string, unknown>[]>;
+  /** get_state data returned by Pi's documented RPC command. */
+  state(): Promise<Record<string, unknown>>;
   /** Graceful-then-forced shutdown; ESRCH-tolerant (stale pid = done). */
   shutdown(): Promise<void>;
 }
@@ -249,6 +251,10 @@ class RealPiProcess implements RealPi {
       throw new Error(`get_messages did not return a messages array: ${JSON.stringify(data).slice(0, 300)}`);
     }
     return messages as Record<string, unknown>[];
+  }
+
+  async state(): Promise<Record<string, unknown>> {
+    return this.request({ type: "get_state" });
   }
 
   async shutdown(): Promise<void> {

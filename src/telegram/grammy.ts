@@ -118,9 +118,20 @@ export async function createTelegramAdapter(
   await bot.api.getMe();
 
   const handlers = new Set<TelegramMessageHandler>();
-  bot.on("message:text", (ctx) => {
-    if (String(ctx.chat?.id) !== config.chatId) return;
-    const text = ctx.message.text;
+  bot.on("message", (ctx) => {
+    const chatMatch = String(ctx.chat?.id) === config.chatId;
+    const text = typeof ctx.message.text === "string" ? ctx.message.text : undefined;
+    console.error(
+      `[pi-caretaker] telegram received chatMatch=${chatMatch} textLength=${text?.length ?? 0}`,
+    );
+    if (!chatMatch) {
+      console.error("[pi-caretaker] telegram dropped reason=chat_mismatch");
+      return;
+    }
+    if (text === undefined) {
+      console.error("[pi-caretaker] telegram dropped reason=non_text");
+      return;
+    }
     for (const handler of [...handlers]) {
       handler(text);
     }

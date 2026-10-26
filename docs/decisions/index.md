@@ -7,7 +7,7 @@ Code points at these files with `ADR-NNNN`.
 |----|-------|--------|------|----------------------|------|
 | [0001](0001-webhook-event-contract.md) | Webhook event contract | accepted | 2026-10-25 | 202 means queued in memory, never delivered; rejections use real status codes. | `tests/events.test.ts`, `tests/queue.test.ts`, `tests/e2e/webhook.e2e.test.ts` |
 | [0002](0002-untrusted-webhook-payload.md) | Untrusted webhook payload | accepted | 2026-10-25 | Webhook content is data, never instructions; it stays in the data channel. | `tests/untrusted-payload.test.ts` |
-| [0003](0003-one-telegram-path.md) | One Telegram path | accepted | 2026-10-25 | This project owns the Telegram conversation; no second notifier may post there. | `tests/telegram-path.test.ts` |
+| [0003](0003-one-telegram-path.md) | One Telegram path | accepted | 2026-10-25 | One `notify` sender; paired-chat inbound replies relay, background turns stay silent. | `tests/telegram-path.test.ts`, `tests/index.test.ts`, `tests/e2e-local/caretaker.e2e-local.test.ts` |
 | [0004](0004-deterministic-escape-hatch.md) | Deterministic escape hatch | accepted | 2026-10-25 | Host-dark and backups-dead alerts bypass triage and must not depend on model judgment. | `tests/escape-hatch.test.ts` |
 | [0005](0005-runtime-configuration.md) | Runtime configuration contract | accepted | 2026-10-25 | Six env vars (token required, Telegram pair optional-together); invalid values fail loudly; values never logged. | `tests/config.test.ts` |
 | [0006](0006-serialized-triage-turns.md) | Triage turns serialize through Pi's native queue | accepted | 2026-10-25 | One session; background turns via followUp behind a single-flight pump; no custom serializer. | `tests/index.test.ts`, `tests/e2e/pipeline.e2e.test.ts` |

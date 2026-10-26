@@ -63,6 +63,19 @@ export { createWebhookListener, type WebhookListenerOptions } from "./listener.j
 
 type NotifyTransport = Pick<TelegramAdapter, "notify">;
 
+const TELEGRAM_MESSAGE_LIMIT = 4096;
+
+function sanitizeTelegramLogError(error: unknown, secrets: readonly (string | undefined)[]): string {
+  let message = error instanceof Error ? error.message : String(error);
+  for (const secret of secrets) {
+    if (secret !== undefined && secret !== "") message = message.replaceAll(secret, "[REDACTED]");
+  }
+  return message
+    .replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "[REDACTED]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/[\r\n]+/g, " ");
+}
+
 interface CaretakerSession {
   config: CaretakerConfig;
   queue: SignallingQueue<EventEnvelope>;
@@ -111,6 +124,11 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   let telegram: NotifyTransport | undefined;
   let managedTelegram: ManagedTelegramAdapter | undefined;
   let inboundMessageCount = 0;
+  // before_agent_start/agent_end expose no run id. Keep forwarded prompts in
+  // FIFO order and match exact user prompt text at turn start; ADR-0006's
+  // single-active-turn guarantee keeps this marker paired through agent_end.
+  let pendingInboundTelegramMessages: string[] = [];
+  let relayCurrentTurn = false;
   let stopped = false;
 
   /**
@@ -134,6 +152,8 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
 
   async function start(ctx: ExtensionContext): Promise<void> {
     if (session !== undefined) return;
+    pendingInboundTelegramMessages = [];
+    relayCurrentTurn = false;
     let config: CaretakerConfig;
     try {
       config = readCaretakerConfig(process.env);
@@ -179,7 +199,18 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
         );
         adapter.onMessage((text) => {
           inboundMessageCount += 1;
-          pi.sendUserMessage(text, { deliverAs: "followUp" });
+          try {
+            pi.sendUserMessage(text, { deliverAs: "followUp" });
+            pendingInboundTelegramMessages.push(text);
+            console.error("[pi-caretaker] telegram forwarded");
+          } catch (error) {
+            console.error(
+              `[pi-caretaker] telegram sendUserMessage-failed error=${sanitizeTelegramLogError(
+                error,
+                [config.telegramBotToken, config.telegramChatId, text],
+              )}`,
+            );
+          }
         });
         telegram = adapter;
         managedTelegram = adapter;
@@ -193,6 +224,8 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   async function stop(): Promise<void> {
     if (stopped) return;
     stopped = true;
+    pendingInboundTelegramMessages = [];
+    relayCurrentTurn = false;
     const active = session;
     session = undefined;
     const activeTelegram = telegram as (NotifyTransport & { stop?: () => Promise<void> }) | undefined;
@@ -236,6 +269,42 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
 
   pi.on("session_shutdown", async () => {
     await stop().catch(() => undefined);
+  });
+
+  pi.on("before_agent_start", (event) => {
+    relayCurrentTurn = false;
+    if (event.messageType !== "user") return;
+    const pendingIndex = pendingInboundTelegramMessages.indexOf(event.prompt);
+    if (pendingIndex < 0) return;
+    pendingInboundTelegramMessages.splice(pendingIndex, 1);
+    relayCurrentTurn = true;
+  });
+
+  pi.on("agent_end", async (event) => {
+    if (!relayCurrentTurn) return;
+    relayCurrentTurn = false;
+
+    const finalAssistant = [...event.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (finalAssistant === undefined) return;
+    const answer = finalAssistant.content
+      .filter((part): part is { type: "text"; text: string } => part.type === "text")
+      .map((part) => part.text)
+      .join("");
+    if (answer.length === 0 || telegram === undefined) return;
+
+    const reply = Array.from(answer).slice(0, TELEGRAM_MESSAGE_LIMIT).join("");
+    try {
+      await telegram.notify(reply);
+    } catch (error) {
+      console.error(
+        `[pi-caretaker] telegram notify-failed error=${sanitizeTelegramLogError(
+          error,
+          [session?.config.telegramBotToken, session?.config.telegramChatId, answer],
+        )}`,
+      );
+    }
   });
 
   pi.registerCommand("caretaker-status", {

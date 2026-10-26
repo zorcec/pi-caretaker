@@ -56,6 +56,7 @@ const okGetMe = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("grammY Telegram adapter", () => {
@@ -182,6 +183,81 @@ describe("grammY Telegram adapter", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       expect(seen).toEqual(["investigate"]);
+    } finally {
+      await adapter.stop();
+    }
+  });
+
+  it("logs each message and explicitly drops chat mismatches and non-text", async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.join(" "));
+    });
+    let polls = 0;
+    const { fetch } = stubFetch((url) => {
+      if (url.endsWith("/getMe")) return okGetMe;
+      if (url.endsWith("/deleteWebhook")) return { ok: true, result: true };
+      if (url.endsWith("/getUpdates")) {
+        polls += 1;
+        if (polls > 1) return { ok: true, result: [] };
+        return {
+          ok: true,
+          result: [
+            {
+              update_id: 1,
+              message: {
+                message_id: 1,
+                chat: { id: 99, type: "private" },
+                text: "private stranger text",
+                date: 1,
+              },
+            },
+            {
+              update_id: 2,
+              message: {
+                message_id: 2,
+                chat: { id: 42, type: "private" },
+                photo: [{ file_id: "photo-file", file_unique_id: "photo-unique", width: 1, height: 1 }],
+                date: 1,
+              },
+            },
+            {
+              update_id: 3,
+              message: {
+                message_id: 3,
+                chat: { id: 42, type: "private" },
+                text: "hello",
+                date: 1,
+              },
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const adapter = await createTelegramAdapter(
+      { botToken: "TEST:token", chatId: "42" },
+      { fetch },
+    );
+    const seen: string[] = [];
+    try {
+      adapter.onMessage((text) => seen.push(text));
+      adapter.start();
+      const start = Date.now();
+      while (seen.length === 0 && Date.now() - start < 3000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      expect(seen).toEqual(["hello"]);
+      expect(lines.map((line) => line.slice(line.indexOf("telegram ")))).toEqual([
+        "telegram received chatMatch=false textLength=21",
+        "telegram dropped reason=chat_mismatch",
+        "telegram received chatMatch=true textLength=0",
+        "telegram dropped reason=non_text",
+        "telegram received chatMatch=true textLength=5",
+      ]);
+      expect(lines.join("\n")).not.toContain("private stranger text");
+      expect(lines.join("\n")).not.toContain("hello");
     } finally {
       await adapter.stop();
     }

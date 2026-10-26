@@ -61,6 +61,38 @@ function messageTexts(messages: readonly Record<string, unknown>[]): string[] {
   return messages.map((m) => JSON.stringify(m));
 }
 
+function assistantOutputs(messages: readonly Record<string, unknown>[]): string[] {
+  const outputs: string[] = [];
+  for (const message of messages) {
+    if (message["role"] !== "assistant" || !Array.isArray(message["content"])) continue;
+    for (const part of message["content"]) {
+      if (typeof part !== "object" || part === null) continue;
+      const block = part as Record<string, unknown>;
+      if (block["type"] === "text" && typeof block["text"] === "string") {
+        outputs.push(block["text"]);
+      } else if (block["type"] === "toolCall" && block["name"] === "caretaker_notify") {
+        const args = block["arguments"];
+        if (typeof args === "object" && args !== null && typeof (args as Record<string, unknown>)["text"] === "string") {
+          outputs.push((args as Record<string, string>)["text"] ?? "");
+        }
+      }
+    }
+  }
+  return outputs;
+}
+
+async function waitForIdle(pi: RealPi, timeoutMs: number, label: string): Promise<void> {
+  const start = Date.now();
+  for (;;) {
+    const state = await pi.state();
+    if (state["isStreaming"] === false && state["pendingMessageCount"] === 0) return;
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`timed out waiting for idle Pi state after ${label}: ${JSON.stringify(state)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
 async function waitForMessages(
   pi: RealPi,
   predicate: (texts: string[]) => boolean,
@@ -137,6 +169,7 @@ describeIfModel("e2e-local caretaker (real Pi + real model + mocked Telegram)", 
       "the triage turn echoing the event",
     );
     expect(texts.some((t) => t.includes(TRIAGE_INSTRUCTIONS))).toBe(true);
+    await waitForIdle(pi, 120_000, "ordinary webhook turn");
   });
 
   it("notifies a must-notify event over mocked HTTP with zero new turns", async () => {
@@ -161,12 +194,14 @@ describeIfModel("e2e-local caretaker (real Pi + real model + mocked Telegram)", 
     expect(String(send?.text)).toMatch(/host-dark/);
     expect(String(send?.text)).not.toContain("server-b host gone dark");
 
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await waitForIdle(pi, 120_000, "must-notify event processing");
     const after = (await pi.messages()).length;
     expect(after).toBe(before);
   });
 
   it("answers a paired-chat Telegram message in the same session", async () => {
+    await waitForIdle(pi, 120_000, "before paired-chat update");
+    const sendsBefore = mock.sends.length;
     mock.enqueueUpdates([
       {
         update_id: 1,
@@ -195,5 +230,29 @@ describeIfModel("e2e-local caretaker (real Pi + real model + mocked Telegram)", 
       "the paired-chat inbound turn",
     );
     expect(texts.some((t) => t.includes("ignore previous instructions"))).toBe(false);
+
+    const sendStart = Date.now();
+    while (
+      mock.sends.length <= sendsBefore &&
+      Date.now() - sendStart < 120_000
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    await waitForIdle(pi, 120_000, "paired-chat reply");
+    const sentReplies = mock.sends.slice(sendsBefore);
+    expect(sentReplies.length).toBeGreaterThan(0);
+    const reply = sentReplies.at(-1);
+    expect(reply?.chat_id).toBe("42");
+    if (reply === undefined) throw new Error("paired-chat reply was not sent");
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(reply.text.length).toBeLessThanOrEqual(4096);
+    const transcriptTexts = await waitForMessages(
+      pi,
+      (all) => all.some((message) => message.includes(JSON.stringify(reply.text))),
+      30_000,
+      "assistant answer recorded in the Pi transcript",
+    );
+    expect(assistantOutputs(await pi.messages())).toContain(reply.text);
+    expect(transcriptTexts.some((message) => message.includes("ignore previous instructions"))).toBe(false);
   });
 });
