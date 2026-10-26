@@ -43,6 +43,7 @@ import {
   matchEscapeHatch,
 } from "./escape-hatch.js";
 import { getHealth as buildHealth, type HealthReport } from "./health.js";
+import { ANSWER_CHUNK_OFFER, formatAnswerChunks } from "./answer-chunks.js";
 import type { TelegramAdapter } from "./telegram/index.js";
 import { createTelegramAdapter, resolveTelegramDeps, type TelegramTransportDeps, type ManagedTelegramAdapter } from "./telegram/grammy.js";
 
@@ -64,7 +65,6 @@ export { createWebhookListener, type WebhookListenerOptions } from "./listener.j
 
 type NotifyTransport = Pick<TelegramAdapter, "notify">;
 
-const TELEGRAM_MESSAGE_LIMIT = 4096;
 const EMPTY_OWNER_REPLY = "(no reply produced)";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type ThinkingLevel = typeof THINKING_LEVELS[number];
@@ -214,13 +214,62 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
    * (ADR-0006): the single-flight pump submits at most one turn, and
    * followUp delivery lets Pi order it against a running turn.
    */
-  const logControlFailure = (action: string, error: unknown): void => {
-    console.error(`[pi-caretaker] telegram ${action}-failed error=${sanitizeTelegramLogError(error, [session?.config.telegramBotToken, session?.config.telegramChatId])}`);
+  const logControlFailure = (action: string, error: unknown, additionalSecrets: readonly (string | undefined)[] = []): void => {
+    console.error(`[pi-caretaker] telegram ${action}-failed error=${sanitizeTelegramLogError(error, [session?.config.telegramBotToken, session?.config.telegramChatId, ...additionalSecrets])}`);
   };
   const sendControlReply = async (text: string, messageId: number): Promise<void> => {
     if (managedTelegram === undefined) return;
     const sent = await managedTelegram.sendMessage(text, messageId);
     if (sent === 0) await telegram?.notify(text);
+  };
+  const sendOwnerAnswer = async (answer: string, inboundMessageId: number | undefined): Promise<boolean> => {
+    const transport = telegram;
+    if (transport === undefined) return false;
+    const plan = formatAnswerChunks(answer);
+    try {
+      for (const [index, chunk] of plan.chunks.entries()) {
+        if (managedTelegram !== undefined && inboundMessageId !== undefined) {
+          const sent = index === 0
+            ? await managedTelegram.sendMessage(chunk, inboundMessageId)
+            : await managedTelegram.sendMessage(chunk, undefined, undefined, { disable_notification: true });
+          if (sent === 0) {
+            if (index === 0 && plan.chunks.length === 1 && !plan.hasMore) {
+              try {
+                await transport.notify(chunk);
+                return true;
+              } catch (error) {
+                logControlFailure("notify", error, [answer]);
+                return false;
+              }
+            }
+            logControlFailure("answer-chunk", new Error("sendMessage returned no message id"));
+            return false;
+          }
+        } else {
+          try {
+            await transport.notify(chunk);
+          } catch (error) {
+            logControlFailure(index === 0 ? "notify" : "answer-chunk", error, [answer]);
+            return false;
+          }
+        }
+      }
+      if (plan.hasMore) {
+        if (managedTelegram !== undefined && inboundMessageId !== undefined) {
+          const sent = await managedTelegram.sendMessage(ANSWER_CHUNK_OFFER, undefined, undefined, { disable_notification: true });
+          if (sent === 0) {
+            logControlFailure("answer-chunk", new Error("offer send returned no message id"));
+            return false;
+          }
+        } else {
+          await transport.notify(ANSWER_CHUNK_OFFER);
+        }
+      }
+      return true;
+    } catch (error) {
+      logControlFailure("answer-chunk", error, [answer]);
+      return false;
+    }
   };
   const installCommandHandlers = (adapter: ManagedTelegramAdapter): void => {
     adapter.onCommand("stop", (messageId) => {
@@ -535,29 +584,12 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
       .map((part) => part.text)
       .join("") ?? "";
     const hasAnswer = answer.length > 0;
-    const reply = hasAnswer
-      ? Array.from(answer).slice(0, TELEGRAM_MESSAGE_LIMIT).join("")
-      : EMPTY_OWNER_REPLY;
+    const reply = hasAnswer ? answer : EMPTY_OWNER_REPLY;
+    const delivered = await sendOwnerAnswer(reply, inboundMessageId);
+    if (!delivered) return;
     if (activeStatusId !== 0) {
       const statusLine = hasAnswer ? `done · ${duration}` : EMPTY_OWNER_REPLY;
-      void managedTelegram?.editMessageText(activeStatusId, statusLine).catch(() => undefined);
-    }
-    if (telegram === undefined) return;
-
-    try {
-      if (managedTelegram !== undefined && inboundMessageId !== undefined) {
-        const sentId = await managedTelegram.sendMessage(reply, inboundMessageId);
-        if (sentId === 0) await telegram.notify(reply);
-      } else {
-        await telegram.notify(reply);
-      }
-    } catch (error) {
-      console.error(
-        `[pi-caretaker] telegram notify-failed error=${sanitizeTelegramLogError(
-          error,
-          [session?.config.telegramBotToken, session?.config.telegramChatId, answer],
-        )}`,
-      );
+      await managedTelegram?.editMessageText(activeStatusId, statusLine).catch(() => undefined);
     }
   });
 

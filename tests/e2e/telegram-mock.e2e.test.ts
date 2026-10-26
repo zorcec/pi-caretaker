@@ -56,7 +56,7 @@ describe("mocked Telegram e2e (loopback Bot API)", () => {
       await fake.handlers.get("session_shutdown")?.({}, ctx);
     } finally { await mock.close(); }
   });
-  it("sends owner liveness and quoted answer over real HTTP while webhook turns stay silent", async () => {
+  it("sends owner liveness and a complete chunked answer over real HTTP while webhook turns stay silent", async () => {
     testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
     const mock = await startMockTelegram();
     try {
@@ -75,13 +75,17 @@ describe("mocked Telegram e2e (loopback Bot API)", () => {
       const deadline = Date.now() + 3000;
       while (!fake.sent.some((turn) => turn.content === "owner prompt") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
       await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "owner prompt" }, ctx);
-      await fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text: "owner answer" }] }] }, ctx);
-      const answerDeadline = Date.now() + 3000;
-      while (!mock.sends.some((send) => send.text === "owner answer") && Date.now() < answerDeadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      const answer = "complete answer. ".repeat(600);
+      await fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text: answer }] }] }, ctx);
 
       expect(mock.calls.some((call) => call.method === "setMessageReaction" && call.body?.message_id === 41)).toBe(true);
       expect(mock.calls.some((call) => call.method === "sendChatAction" && call.body?.action === "typing")).toBe(true);
-      expect(mock.sends.find((send) => send.text === "owner answer")?.reply_parameters).toEqual({ message_id: 41 });
+      expect(mock.sends).toHaveLength(3);
+      expect(mock.sends.map((send) => send.text.slice(0, 4))).toEqual(["(1/3", "(2/3", "(3/3"]);
+      expect(mock.sends.map((send) => send.text.replace(/^\(\d+\/\d+\) /u, "")).join("")).toBe(answer);
+      expect(mock.sends[0]?.reply_parameters).toEqual({ message_id: 41 });
+      expect(mock.sends[1]?.disable_notification).toBe(true);
+      expect(mock.sends[2]?.disable_notification).toBe(true);
       await fake.handlers.get("session_shutdown")?.({}, ctx);
     } finally { await mock.close(); }
   });

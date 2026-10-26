@@ -1,6 +1,6 @@
 # ADR-0007: Telegram via grammY, configured by ENV
 
-- Status: accepted · Date: 2026-10-25 · Decided by: owner
+- Status: accepted · Date: 2026-10-25 · Decided by: owner · Reaffirmed: 2026-10-27
 ## Decision
 The Telegram transport is a direct grammY `Bot` owned by pi-caretaker, not
 a Pitgram integration. Configuration is two environment variables,

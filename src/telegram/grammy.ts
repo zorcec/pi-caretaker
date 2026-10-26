@@ -80,7 +80,7 @@ export interface ManagedTelegramAdapter extends TelegramAdapter {
   onCommandCallback(handler: (data: string, messageId: number) => void): void;
   react(messageId: number, emoji: "👀"): Promise<void>;
   sendChatAction(action: "typing"): Promise<void>;
-  sendMessage(text: string, replyToMessageId?: number, replyMarkup?: InlineKeyboardMarkup): Promise<number>;
+  sendMessage(text: string, replyToMessageId?: number, replyMarkup?: InlineKeyboardMarkup, options?: { disable_notification?: boolean }): Promise<number>;
   editMessageText(messageId: number, text: string): Promise<void>;
   /** Begin long polling (idempotent — a running bot ignores repeats). */
   start(): void;
@@ -199,10 +199,11 @@ export async function createTelegramAdapter(
     onCommandCallback(handler): void { commandCallbackHandlers.add(handler); },
     async react(messageId, emoji): Promise<void> { await liveness("reaction", () => bot.api.setMessageReaction(config.chatId, messageId, [{ type: "emoji", emoji }])); },
     async sendChatAction(action): Promise<void> { await liveness("typing", () => bot.api.sendChatAction(config.chatId, action)); },
-    async sendMessage(text, replyToMessageId, replyMarkup): Promise<number> {
+    async sendMessage(text, replyToMessageId, replyMarkup, options): Promise<number> {
       const result = await liveness("send", () => bot.api.sendMessage(config.chatId, text, {
         ...(replyToMessageId === undefined ? {} : { reply_parameters: { message_id: replyToMessageId } }),
         ...(replyMarkup === undefined ? {} : { reply_markup: replyMarkup }),
+        ...(options?.disable_notification === true ? { disable_notification: true } : {}),
       }));
       return typeof result === "object" && result !== null && "message_id" in result ? Number(result.message_id) : 0;
     },

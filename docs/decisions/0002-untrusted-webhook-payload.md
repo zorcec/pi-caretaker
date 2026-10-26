@@ -1,5 +1,5 @@
 # ADR-0002: Untrusted webhook payload
-- Status: accepted · Date: 2026-10-25 · Decided by: owner
+- Status: accepted · Date: 2026-10-25 · Decided by: owner · Reaffirmed: 2026-10-27
 ## Decision
 Webhook content is data, never instructions. It travels in the data channel
 of a triage request while the instruction channel stays a fixed repo-owned

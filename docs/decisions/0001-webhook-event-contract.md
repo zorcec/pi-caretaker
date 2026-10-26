@@ -1,5 +1,5 @@
 # ADR-0001: Webhook event contract
-- Status: accepted · Date: 2026-10-25 · Decided by: owner
+- Status: accepted · Date: 2026-10-25 · Decided by: owner · Reaffirmed: 2026-10-27
 ## Decision
 `202 Accepted` means the event entered the in-memory queue — nothing more.
 Only `message` is required; severity is advisory context, and oversized,

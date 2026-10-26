@@ -1,5 +1,5 @@
 # ADR-0006: Triage turns serialize through Pi's native queue
-- Status: accepted · Date: 2026-10-25 · Decided by: owner
+- Status: accepted · Date: 2026-10-25 · Decided by: owner · Reaffirmed: 2026-10-27
 ## Decision
 Background triage turns are submitted with `pi.sendUserMessage(..., { deliverAs: "followUp" })` into the single persistent Pi session, behind the caretaker's own single-flight pump. There is no custom session, serializer, or second agent loop: Pi owns turn ordering and the pump owns submission order.
 ## Why

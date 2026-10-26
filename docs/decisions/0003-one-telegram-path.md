@@ -1,11 +1,12 @@
 # ADR-0003: One Telegram path
-- Status: accepted · Date: 2026-10-25 · Decided by: owner
+- Status: accepted · Date: 2026-10-25 · Decided by: owner · Reaffirmed: 2026-10-27
 ## Decision
-This project owns the Telegram conversation: `notify(text)` is the only way
-pi-caretaker sends a Telegram message. Final assistant answers from turns
-originated by a paired-chat inbound message relay through `notify`; background
-turns never relay automatically — only deliberate notifications and these
-owner-originated replies appear.
+This project owns the Telegram conversation through one managed adapter:
+`notify(text)` carries deliberate notifications, and its managed
+`sendMessage(text, replyToId)` carries deterministic protocol messages and
+quoted owner-originated final answers. Both use the same grammY Bot;
+background turns never relay automatically — only deliberate notifications,
+adapter-owned protocol messages, and these owner-originated replies appear.
 ## Why
 With two notifiers posting to the owner's chat, silence can never be proven,
 and "it only pings when it matters" becomes unenforceable.

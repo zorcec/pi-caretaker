@@ -282,6 +282,75 @@ describe("pi-caretaker extension entry", () => {
     expect(lines.some((line) => line.includes("telegram notify-failed") && line.includes("notify transport failed"))).toBe(true);
   });
 
+  it("sends long owner answers as numbered silent continuation chunks before the done edit", async () => {
+    vi.useFakeTimers();
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "chunk answer", 86);
+    await vi.advanceTimersByTimeAsync(3000);
+    const originalSend = attached.managed.sendMessage.getMockImplementation();
+    expect(originalSend).toBeDefined();
+    let releaseLast!: () => void;
+    const lastChunkPending = new Promise<void>((resolve) => { releaseLast = resolve; });
+    let markLastChunkStarted!: () => void;
+    const lastChunkStarted = new Promise<void>((resolve) => { markLastChunkStarted = resolve; });
+    attached.managed.sendMessage.mockImplementation(async (...args: unknown[]) => {
+      if (typeof args[0] === "string" && args[0].startsWith("(3/3)")) {
+        markLastChunkStarted();
+        await lastChunkPending;
+      }
+      return originalSend!(...args);
+    });
+    const ending = Promise.resolve(assistantEnd(fake, "answer ".repeat(1300)));
+    try {
+      const outcome = await Promise.race([
+        lastChunkStarted.then(() => "last-chunk"),
+        ending.then(() => "finished"),
+      ]);
+      expect(outcome).toBe("last-chunk");
+      const chunks = attached.managed.sendMessage.mock.calls.filter(([text]) => text !== "working…");
+      expect(chunks).toHaveLength(3);
+      expect(chunks.map(([text]) => String(text).slice(0, 4))).toEqual(["(1/3", "(2/3", "(3/3"]);
+      expect(chunks[0]?.[1]).toBe(86);
+      expect(chunks[1]?.slice(1)).toEqual([undefined, undefined, { disable_notification: true }]);
+      expect(chunks[2]?.slice(1)).toEqual([undefined, undefined, { disable_notification: true }]);
+      expect(attached.managed.editMessageText).not.toHaveBeenCalled();
+      releaseLast();
+      await ending;
+      expect(attached.managed.editMessageText).toHaveBeenCalledWith(72, expect.stringContaining("done"));
+    } finally {
+      releaseLast();
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops after four answer chunks and sends the fixed offer line", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    await beginRelay(fake, attached, "capped answer", 87);
+    await assistantEnd(fake, "x".repeat(4096 * 8));
+    const sends = attached.managed.sendMessage.mock.calls;
+    expect(sends).toHaveLength(5);
+    expect(sends.slice(0, 4).map(([text]) => String(text).slice(0, 5))).toEqual(["(1/4)", "(2/4)", "(3/4)", "(4/4)"]);
+    expect(sends.slice(1, 4).every((call) => call[3] && (call[3] as { disable_notification: boolean }).disable_notification)).toBe(true);
+    expect(sends[4]?.[0]).toBe("The rest was omitted; ask me to continue.");
+    expect(sends[4]?.slice(1)).toEqual([undefined, undefined, { disable_notification: true }]);
+  });
+
+  it("logs and stops the answer sequence when a continuation send fails", async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { lines.push(args.join(" ")); });
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const originalSend = attached.managed.sendMessage.getMockImplementation();
+    expect(originalSend).toBeDefined();
+    attached.managed.sendMessage.mockImplementation(async (...args: unknown[]) => {
+      if (typeof args[0] === "string" && args[0].startsWith("(2/3)")) throw new Error("continuation send failed");
+      return originalSend!(...args);
+    });
+    await beginRelay(fake, attached, "failed answer", 88);
+    await expect(assistantEnd(fake, "x".repeat(9000))).resolves.toBeUndefined();
+    expect(attached.managed.sendMessage).toHaveBeenCalledTimes(2);
+    expect(lines.some((line) => line.includes("answer-chunk-failed") && line.includes("continuation send failed"))).toBe(true);
+  });
+
   it("quotes the inbound id on the final answer through managed sendMessage", async () => {
     const fake = createFakePi(); const attached = attachManaged(fake);
     await beginRelay(fake, attached, "quote me", 81);
@@ -872,7 +941,7 @@ describe("pi-caretaker extension entry", () => {
     }
   });
 
-  it("relays the inbound turn's final assistant text through notify only", async () => {
+  it("relays the inbound turn's final assistant text through managed Telegram", async () => {
     testEnv({
       PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
       PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
@@ -907,7 +976,7 @@ describe("pi-caretaker extension entry", () => {
       }
       expect(fake.sent.filter((turn) => turn.content === "inbound prompt")).toHaveLength(1);
 
-      const answer = "final assistant answer ".repeat(300);
+      const answer = "final assistant answer ".repeat(80);
       await fake.handlers.get("before_agent_start")?.(
         { messageType: "user", prompt: "inbound prompt" },
         ctx,
@@ -922,8 +991,8 @@ describe("pi-caretaker extension entry", () => {
       }
       expect(mock.sends).toHaveLength(1);
       expect(mock.sends[0]?.chat_id).toBe("42");
-      expect(mock.sends[0]?.text).toBe(answer.slice(0, 4096));
-      expect(mock.sends[0]?.text.length).toBe(4096);
+      expect(mock.sends[0]?.text).toBe(answer);
+      expect(mock.sends[0]?.reply_parameters).toEqual({ message_id: 1 });
 
       await fake.handlers.get("agent_end")?.(
         { messages: [{ role: "assistant", content: [{ type: "text", text: "later answer" }] }] },

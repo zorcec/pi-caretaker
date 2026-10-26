@@ -1,5 +1,5 @@
 # ADR-0004: Deterministic escape hatch
-- Status: accepted · Date: 2026-10-25 · Decided by: owner
+- Status: accepted · Date: 2026-10-25 · Decided by: owner · Reaffirmed: 2026-10-27
 ## Decision
 "Must never be missed" alerts (host dark, backups dead) bypass triage and
 notify deterministically, without depending on the model deciding they
