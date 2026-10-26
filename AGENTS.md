@@ -28,6 +28,10 @@ ones matching your task before you start:
   red→green proof, gates, bug-ticket rule).
 - `skill-improvement` — when a skill misleads you during real work (fix
   factual errors immediately, never restyle).
+- `orchestrate-private` — when delegating work to subagents or running
+  multi-lane work (planner/worker roles, model tiers, brief/state-file
+  discipline). Lives outside this repo:
+  `~/workspace/sandbox-bluebox/plugins/orchestrate/skills/orchestrate-private/`.
 
 ## The five commands
 
