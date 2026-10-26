@@ -54,8 +54,9 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
-      // scripts/ counts because the guards expose importable functions
-      // (runCheck, isTestIdentity, extractReleaseNotes, …) alongside their
+      // scripts/ counts because guard and operator scripts expose importable
+      // pure functions (runCheck, extractReleaseNotes, parseSecretsEnv,
+      // resolveStartConfig, resolveAlertConfig, …) alongside their
       // child-process CLI surface. The child-process runs prove exit codes;
       // these numbers prove the logic itself is executed.
       include: ["src/**/*.ts", "scripts/**/*.mjs"],

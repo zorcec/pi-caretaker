@@ -34,6 +34,16 @@ pnpm check     # typecheck + lint + test
 pnpm build     # dist/ via tsup
 ```
 
+## Run it
+
+Create a repo-root `secrets.env` containing `PI_CARETAKER_TOKEN=<your token>`
+(generate one with `openssl rand -hex 24`). Operator environment variables take
+precedence, and token values are never printed. Start Pi and the caretaker with
+`pnpm start` (or `npm start`); trigger a fake host-dark alert with
+`pnpm send:alert [message]` (or `npm run send:alert [message]`). The listener
+defaults to `127.0.0.1:8787`; use `PI_CARETAKER_HOST` and
+`PI_CARETAKER_PORT` to override it.
+
 ## The `202` honesty
 
 `202 Accepted` means the event entered the **in-memory queue**. It does not
