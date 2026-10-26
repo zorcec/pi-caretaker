@@ -15,6 +15,20 @@ Orchestration/brevity behavior (`orchestrate`, `terse`) comes from the
 owner's global `~/.claude/skills/` set — never copied into this repo; the
 repo's own skills are project knowledge for strangers cloning it.
 
+## Skills — read before starting (`.agents/skills/`)
+
+Pi discovers these automatically, but discovery is not reading. Load the
+ones matching your task before you start:
+
+- `caretaker-codebase` — navigating or changing this repo (src map, docs,
+  guards, which hook runs when).
+- `caretaker-testing` — writing or changing any test (the five suites, the
+  anti-placeholder rule, how to run).
+- `implementation-workflow` — any code change (ADRs first, smallest change,
+  red→green proof, gates, bug-ticket rule).
+- `skill-improvement` — when a skill misleads you during real work (fix
+  factual errors immediately, never restyle).
+
 ## The five commands
 
 ```bash
