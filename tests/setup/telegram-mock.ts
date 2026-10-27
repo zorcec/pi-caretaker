@@ -46,6 +46,7 @@ export interface MockTelegram {
   enqueueUpdates(updates: readonly unknown[]): void;
   setNextMessageId(id: number): void;
   failNextReaction(): void;
+  failNextSendMessage(): void;
   close(): Promise<void>;
 }
 
@@ -80,6 +81,7 @@ export async function startMockTelegram(): Promise<MockTelegram> {
   const queued: unknown[] = [];
   let nextMessageId = 1;
   let failReaction = false;
+  let failSendMessage = false;
   const server: Server = createServer(async (req, res) => {
     const method = (req.url ?? "").split("/").pop() ?? "";
     const body = method === "getMe" || method === "deleteWebhook" ? undefined : await readJson(req) as Record<string, unknown>;
@@ -98,6 +100,12 @@ export async function startMockTelegram(): Promise<MockTelegram> {
     if (method === "sendMessage") {
       const sendBody = body as { chat_id?: unknown; text?: unknown; reply_parameters?: { message_id?: unknown }; reply_markup?: unknown; disable_notification?: boolean };
       sends.push({ chat_id: sendBody.chat_id, text: String(sendBody.text ?? ""), ...(sendBody.reply_parameters === undefined ? {} : { reply_parameters: sendBody.reply_parameters }), ...(sendBody.reply_markup === undefined ? {} : { reply_markup: sendBody.reply_markup }), ...(sendBody.disable_notification === undefined ? {} : { disable_notification: sendBody.disable_notification }) });
+      if (failSendMessage) {
+        failSendMessage = false;
+        res.statusCode = 400;
+        json(res, { ok: false, error_code: 400, description: "send disabled" });
+        return;
+      }
       json(res, { ok: true, result: { message_id: nextMessageId } });
       nextMessageId += 1;
       return;
@@ -133,6 +141,7 @@ export async function startMockTelegram(): Promise<MockTelegram> {
     },
     setNextMessageId(id: number): void { nextMessageId = id; },
     failNextReaction(): void { failReaction = true; },
+    failNextSendMessage(): void { failSendMessage = true; },
     close: () =>
       new Promise<void>((resolve, reject) =>
         server.close((error?: Error) => (error ? reject(error) : resolve())),

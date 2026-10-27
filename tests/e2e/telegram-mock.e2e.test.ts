@@ -78,6 +78,44 @@ describe("mocked Telegram e2e (loopback Bot API)", () => {
     } finally { await mock.close(); }
   });
 
+  it("reports a failed owner answer until a successful managed send clears it", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    const mock = await startMockTelegram();
+    let fake: ReturnType<typeof createFakePi> | undefined;
+    let ctx: ReturnType<typeof fakeContext> | undefined;
+    try {
+      fake = createFakePi();
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      ctx = fakeContext(fake.notifies);
+      await startedPort(fake, ctx);
+      mock.failNextSendMessage();
+      mock.enqueueUpdates([{ update_id: 1, message: { message_id: 301, chat: { id: 42, type: "private" }, text: "failed answer prompt", date: 1 } }]);
+      await waitForTurns(fake, 1);
+      await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "failed answer prompt" }, ctx);
+      await fake.handlers.get("agent_end")?.({ messages: [{ role: "assistant", content: [{ type: "text", text: "private answer body" }] }] }, ctx);
+
+      const status = fake.commands.get("caretaker-status");
+      if (status === undefined) throw new Error("caretaker-status not registered");
+      await vi.waitFor(async () => {
+        await status.handler("", ctx as never);
+        expect(fake?.notifies.at(-1)?.message).toMatch(/telegramLastError: sendMessage failed \(GrammyError\) at \d{4}-\d{2}-\d{2}T/);
+      });
+      const failedStatus = fake.notifies.at(-1)?.message ?? "";
+      expect(failedStatus).not.toContain("TEST:token");
+      expect(failedStatus).not.toContain("private answer body");
+      expect(mock.sends.filter((send) => send.text === "private answer body")).toHaveLength(2);
+
+      mock.enqueueUpdates([{ update_id: 2, message: { message_id: 302, chat: { id: 42, type: "private" }, text: "/stop", entities: [{ type: "bot_command", offset: 0, length: 5 }], date: 1 } }]);
+      await vi.waitFor(() => expect(mock.sends.some((send) => send.text === "nothing running")).toBe(true));
+      await status.handler("", ctx as never);
+      expect(fake.notifies.at(-1)?.message).toContain("telegramLastError: null");
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally {
+      if (fake !== undefined && ctx !== undefined) await fake.handlers.get("session_shutdown")?.({}, ctx);
+      await mock.close();
+    }
+  });
+
   it("records a queued reaction for the second owner message before its relay turn starts", async () => {
     testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
     const mock = await startMockTelegram();

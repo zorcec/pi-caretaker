@@ -212,7 +212,7 @@ describe("pi-caretaker managed Telegram entry", () => {
     }
   });
 
-  it("caretaker-status does not surface sendMessage failures yet (known gap, ticket aab41d2d0301c7a037d4c62298f3ce) — asserts current behavior", async () => {
+  it("caretaker-status surfaces failed sendMessage safely without answer text or secrets", async () => {
     testEnv({
       PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token",
       PI_CARETAKER_TELEGRAM_CHAT_ID: "42",
@@ -271,9 +271,11 @@ describe("pi-caretaker managed Telegram entry", () => {
     expect(lines.some((line) => line.includes("liveness-send-failed"))).toBe(true);
     expect(lines.join("\n")).not.toContain("TEST:token");
     expect(lines.join("\n")).not.toContain(answer);
-    // Characterizes the known gap until ticket aab41d2d0301c7a037d4c62298f3ce records liveness failures in getLastError().
     await fake.commands.get("caretaker-status")?.handler("", ctx as never);
-    expect(fake.notifies.at(-1)?.message).toContain("telegramLastError: null");
+    const statusMessage = fake.notifies.at(-1)?.message ?? "";
+    expect(statusMessage).toMatch(/telegramLastError: sendMessage failed \(GrammyError\) at \d{4}-\d{2}-\d{2}T/);
+    expect(statusMessage).not.toContain("TEST:token");
+    expect(statusMessage).not.toContain(answer);
     await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
 

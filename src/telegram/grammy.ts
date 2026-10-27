@@ -58,9 +58,9 @@ export function resolveTelegramDeps(
 }
 
 /**
- * Last polling/middleware failure, parsed into a displayable shape at the
- * boundary where it was caught. Callers get a message and a timestamp —
- * never a raw `unknown` they would have to narrow themselves.
+ * Adapter failure parsed into a displayable shape at the boundary where it
+ * was caught. Send failures use a safe class label; polling issues retain
+ * their message for the status command's secret redaction.
  */
 export interface TelegramPollingIssue {
   message: string;
@@ -72,6 +72,22 @@ function describeError(error: unknown): TelegramPollingIssue {
     message: error instanceof Error ? error.message : String(error),
     at: new Date().toISOString(),
   };
+}
+
+function describeSendError(error: unknown): TelegramPollingIssue {
+  const name = error instanceof Error ? error.name : "";
+  const errorClass = ["GrammyError", "HttpError", "TypeError", "AbortError"].includes(name)
+    ? name
+    : "Error";
+  return {
+    message: `sendMessage failed (${errorClass})`,
+    at: new Date().toISOString(),
+  };
+}
+
+function isSendMessageRequest(input: string | URL | Request): boolean {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  return url.split("?")[0]?.endsWith("/sendMessage") === true;
 }
 
 export interface ManagedTelegramAdapter extends TelegramAdapter {
@@ -86,7 +102,7 @@ export interface ManagedTelegramAdapter extends TelegramAdapter {
   start(): void;
   /** Stop polling and wait for the runner to settle. */
   stop(): Promise<void>;
-  /** Last polling/middleware failure, if any. Undefined when healthy. */
+  /** Send failure persists until a successful managed sendMessage; otherwise returns the latest polling/middleware issue. */
   getLastError(): TelegramPollingIssue | undefined;
 }
 
@@ -108,11 +124,13 @@ export async function createTelegramAdapter(
     throw new Error("telegram chat id is required");
   }
   let lastError: TelegramPollingIssue | undefined;
+  let lastSendError: TelegramPollingIssue | undefined;
   const trackedFetch: typeof fetch | undefined = deps?.fetch === undefined ? undefined : async (input, init) => {
     try {
       return await deps.fetch!(input, init);
     } catch (error) {
-      lastError = describeError(error);
+      if (isSendMessageRequest(input)) lastSendError = describeSendError(error);
+      else lastError = describeError(error);
       throw error;
     }
   };
@@ -130,7 +148,12 @@ export async function createTelegramAdapter(
   const commandHandlers = new Map<string, Set<(messageId: number) => void>>();
   const commandCallbackHandlers = new Set<(data: string, messageId: number) => void>();
   const liveness = async (label: string, operation: () => Promise<unknown>): Promise<unknown> => {
-    try { return await operation(); } catch (error) {
+    try {
+      const result = await operation();
+      if (label === "send") lastSendError = undefined;
+      return result;
+    } catch (error) {
+      if (label === "send") lastSendError = describeSendError(error);
       console.error(`[pi-caretaker] telegram liveness-${label}-failed error=${String(error).replace(/[\\r\\n]+/g, " ").replace(/\\b\\d{6,}:[A-Za-z0-9_-]{20,}\\b/g, "[REDACTED]")}`);
       return undefined;
     }
@@ -218,7 +241,7 @@ export async function createTelegramAdapter(
       await bot.stop().catch(() => undefined);
     },
     getLastError(): TelegramPollingIssue | undefined {
-      return lastError;
+      return lastSendError ?? lastError;
     },
   };
 }
