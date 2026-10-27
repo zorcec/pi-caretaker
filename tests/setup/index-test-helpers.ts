@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import piCaretaker from "../../src/index.js";
 import { createFakePi, fakeContext } from "./fake-pi.js";
 
-export function attachManaged(fake: ReturnType<typeof createFakePi>) {
+export function attachManaged(fake: ReturnType<typeof createFakePi>, configuredModelIds?: string[]) {
     const calls: { type: string; args: unknown[] }[] = [];
     const inboundHandlers: ((text: string, messageId: number) => void)[] = [];
     const commands = new Map<string, Set<(messageId: number) => void>>();
@@ -29,7 +29,11 @@ export function attachManaged(fake: ReturnType<typeof createFakePi>) {
     piControls.getThinkingLevel = () => "minimal";
     piControls.setThinkingLevel = vi.fn();
     piControls.setModel = vi.fn(async () => true);
-    const controls = piCaretaker(fake.api);
+    const controls = piCaretaker(
+      fake.api,
+      undefined,
+      configuredModelIds === undefined ? undefined : { readConfiguredModelIds: () => configuredModelIds },
+    );
     controls.attachTelegram(managed);
     return {
       calls,

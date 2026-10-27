@@ -185,7 +185,7 @@ describe("pi-caretaker owner relay and command entry", () => {
   });
 
   it("/model picker uses only available models and selects by the saved index", async () => {
-    const fake = createFakePi(); const attached = attachManaged(fake);
+    const fake = createFakePi(); const attached = attachManaged(fake, []);
     const hiddenModel = { provider: "provider-without-auth", id: "not-available" };
     const availableModel = { provider: "provider-with-auth", id: "m".repeat(90) };
     const getModelsOfType = vi.fn(() => [hiddenModel, availableModel]);
@@ -228,7 +228,7 @@ describe("pi-caretaker owner relay and command entry", () => {
   });
 
   it("/model reports safe auth diagnostics when the model switch fails", async () => {
-    const fake = createFakePi(); const attached = attachManaged(fake);
+    const fake = createFakePi(); const attached = attachManaged(fake, []);
     const model = { provider: "opencode-go", id: "mimo-v2.6-flash" };
     const tokenLikeText = "sk-live-sensitive-value";
     const ctx = {
@@ -253,7 +253,7 @@ describe("pi-caretaker owner relay and command entry", () => {
   });
 
   it("/model keeps the flat failure reply only when diagnostics are unavailable", async () => {
-    const fake = createFakePi(); const attached = attachManaged(fake);
+    const fake = createFakePi(); const attached = attachManaged(fake, []);
     const model = { provider: "provider", id: "model" };
     const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getAvailableOfType: async () => [model] }, model: undefined };
     await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
@@ -265,7 +265,7 @@ describe("pi-caretaker owner relay and command entry", () => {
   });
 
   it("/model keeps the successful session-scoped switch reply", async () => {
-    const fake = createFakePi(); const attached = attachManaged(fake);
+    const fake = createFakePi(); const attached = attachManaged(fake, []);
     const model = { provider: "provider", id: "model" };
     const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getAvailableOfType: async () => [model] }, model: undefined };
     await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);

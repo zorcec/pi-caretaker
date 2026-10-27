@@ -148,7 +148,11 @@ export interface CaretakerControls {
  * the test/Telegram-ticket seams; it is assignable to Pi's ExtensionFactory
  * because a non-void return is assignable to a void-returning signature.
  */
-export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTransportDeps): CaretakerControls {
+export default function piCaretaker(
+  pi: ExtensionAPI,
+  telegramDeps?: TelegramTransportDeps,
+  modelPickerConfig?: { readConfiguredModelIds: () => string[] },
+): CaretakerControls {
   let session: CaretakerSession | undefined;
   let telegram: NotifyTransport | undefined;
   const safeLossField = (value: string | undefined): string => {
@@ -383,7 +387,8 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
       modelPickerSnapshots.clear();
       void (async () => {
         const availableModels = await ctx.modelRegistry.getAvailableOfType("chat");
-        const models = prioritizeConfiguredModels(availableModels, readConfiguredModelIds());
+        const configuredModelIds = modelPickerConfig?.readConfiguredModelIds() ?? readConfiguredModelIds();
+        const models = prioritizeConfiguredModels(availableModels, configuredModelIds);
         if (models.length === 0) {
           await sendControlReply("No chat models are available; configure a provider first.", messageId);
           return;
