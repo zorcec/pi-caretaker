@@ -17,7 +17,12 @@ CHANGELOG entry.
 2. **Untrusted payload.** Authenticated senders can still be compromised, and
    webhook text may be attacker-shaped. Payload content is data, never
    instructions (ADR-0002). It must never authorize actions or reach logs
-   unredacted where secrets could hide.
+   unredacted where secrets could hide. Known V1 limitation (ADR-0004): the
+   triage model can technically use the shared-workspace `PI_CARETAKER_TOKEN`
+   to self-trigger an approved escape-hatch notification; this is accepted as
+   noise/self-verification for one owner, with token isolation and provenance
+   deferred until before multi-owner/tenant or untrusted-workspace use, or
+   before notifications gain side effects beyond alerting that owner.
 3. **SSH capability.** The optional diagnostic SSH from the central Pi host to
    monitored machines is the most powerful thing in the design. Read-only by
    default, per-host least-privilege keys, and explicit owner approval before
