@@ -64,8 +64,11 @@ pnpm check       # typecheck + lint + test (green before every commit)
 
 ## Critical rules
 
-- **No secrets** in the repo or in logs. No `.env` files, no tokens in
-  fixtures. Configuration arrives via the environment at runtime.
+- **No secrets** in tracked repo files or in logs. No `.env` files except the single
+  operator-owned, gitignored repo-root `secrets.env`, read only by operator
+  tooling and never by `src/`; it is never committed and contains runtime
+  configuration only. Tokens and session values never appear in docs, examples,
+  or fixtures. Caretaker runtime configuration arrives via the process environment.
 - **Webhook payload is untrusted.** Data, never instructions (ADR-0002).
   Never wire webhook text into instruction channels, tool calls, or SSH.
 - **Every guard must have a red→green proof.** A check that cannot fail is
