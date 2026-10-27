@@ -5,12 +5,11 @@
  * memory", and anything unprocessed at restart is lost. A fresh instance
  * starts empty — there is no shared module storage to recover from.
  *
- * Chosen defaults, flagged for the owner on ticket 6a8e1458 (all reversible,
- * none user-visible beyond the contract): sequence numbers start at 0 and
- * increment per accepted arrival (refusals consume none); capacity counts
- * retained waiting events only; capacity must be a positive integer
- * (RangeError otherwise); a consumer throw stops the pump and surfaces
- * through drained() — the failed event stays queued, nothing is retried.
+ * Sequence numbers start at 0 and increment per accepted arrival (refusals
+ * consume none); capacity includes the event being delivered and must be a
+ * positive integer. Delivery retries a failing event three times with bounded
+ * backoff; exhaustion stops the pump and retains the failed event at the front
+ * until process restart.
  */
 export interface QueueOptions {
   /** Maximum events held in memory before new arrivals are rejected. */
@@ -39,21 +38,41 @@ export interface EventQueue<T> {
  * returns this; the interface stays parameter-compatible with EventQueue<T>.
  */
 export interface SignallingQueue<T> extends EventQueue<T> {
+  /** Current FIFO head without removing it, for retry-safe delivery. */
+  peek(): QueuedEvent<T> | undefined;
   /** Register a wake-up; returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
 }
 
 export type QueueConsumer<T> = (event: QueuedEvent<T>) => Promise<void>;
 
-export interface DeliveryController {
-  /** True once the consumer has failed; failure is terminal until restart. */
+export const DELIVERY_MAX_ATTEMPTS = 3;
+export const DELIVERY_RETRY_BASE_DELAY_MS = 250;
+
+export interface DeliveryFailure<T> {
+  event: QueuedEvent<T>;
+  error: unknown;
+  attempts: number;
+  at: string;
+}
+
+export interface DeliveryOptions<T> {
+  /** Injectable timer seam; defaults to a real timeout. */
+  delay?: (milliseconds: number) => Promise<void>;
+  onTerminalFailure?: (failure: DeliveryFailure<T>) => void;
+}
+
+export interface DeliveryController<T = unknown> {
+  /** True once delivery retries are exhausted; failure is terminal until restart. */
   hasFailed(): boolean;
+  /** Details for the terminal, retained event, if delivery exhausted retries. */
+  getFailure(): DeliveryFailure<T> | undefined;
   /** Halt after the in-flight delivery finishes; the rest stays queued. */
   stop(): void;
   /**
    * Resolves when delivery is idle and halted with nothing in flight.
-   * Rejects with the consumer's error when a delivery throws — the pump
-   * is then stopped and the failed event remains queued.
+   * Rejects with the final consumer error after bounded retries exhaust;
+   * the failed event remains at the queue front.
    */
   drained(): Promise<void>;
 }
@@ -93,6 +112,9 @@ export function createEventQueue<T>(options: QueueOptions): SignallingQueue<T> {
     dequeue(): QueuedEvent<T> | undefined {
       return retained.shift();
     },
+    peek(): QueuedEvent<T> | undefined {
+      return retained[0];
+    },
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => {
@@ -103,17 +125,19 @@ export function createEventQueue<T>(options: QueueOptions): SignallingQueue<T> {
 }
 
 /**
- * Deliver one queue's items sequentially: at most one consumer call in
- * flight, in FIFO order. Stops on the first consumer throw (the error
- * surfaces through drained(); the failed event stays queued, unretried).
+ * Deliver one queue's items sequentially. The head remains in the bounded
+ * queue until acknowledged by a successful consumer call, so failures retain
+ * it at the front throughout three total attempts and terminal exhaustion.
  */
 export function startDelivery<T>(
   queue: SignallingQueue<T>,
   consumer: QueueConsumer<T>,
-): DeliveryController {
+  options: DeliveryOptions<T> = {},
+): DeliveryController<T> {
+  const delay = options.delay ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   let stopped = false;
   let inFlight = 0;
-  let failed: unknown;
+  let failure: DeliveryFailure<T> | undefined;
   let hasFailed = false;
   let wake: (() => void) | undefined;
   let unsubscribed = false;
@@ -135,7 +159,7 @@ export function startDelivery<T>(
   // still-running pump keeps its wake-up — only terminal states unsubscribe.
   const checkSettled = (): void => {
     if (hasFailed) {
-      for (const waiter of waiters) waiter.reject(failed);
+      for (const waiter of waiters) waiter.reject(failure?.error);
       waiters.clear();
       unsubscribeOnce();
       return;
@@ -148,7 +172,7 @@ export function startDelivery<T>(
   };
   const loop = async (): Promise<void> => {
     while (!stopped) {
-      const event = queue.dequeue();
+      const event = queue.peek();
       if (event === undefined) {
         if (stopped) break;
         await new Promise<void>((resolve) => {
@@ -159,12 +183,30 @@ export function startDelivery<T>(
         continue;
       }
       inFlight += 1;
+      let delivered = false;
+      let lastError: unknown;
+      let attempts = 0;
       try {
-        await consumer(event);
-      } catch (error) {
-        hasFailed = true;
-        failed = error;
-        stopped = true;
+        while (attempts < DELIVERY_MAX_ATTEMPTS && !stopped) {
+          attempts += 1;
+          try {
+            await consumer(event);
+            queue.dequeue();
+            delivered = true;
+            break;
+          } catch (error) {
+            lastError = error;
+            if (attempts < DELIVERY_MAX_ATTEMPTS && !stopped) {
+              await delay(DELIVERY_RETRY_BASE_DELAY_MS * attempts);
+            }
+          }
+        }
+        if (!delivered && !stopped) {
+          hasFailed = true;
+          stopped = true;
+          failure = { event, error: lastError, attempts, at: new Date().toISOString() };
+          options.onTerminalFailure?.(failure);
+        }
       } finally {
         inFlight -= 1;
       }
@@ -177,6 +219,9 @@ export function startDelivery<T>(
     hasFailed(): boolean {
       return hasFailed;
     },
+    getFailure(): DeliveryFailure<T> | undefined {
+      return failure;
+    },
     stop(): void {
       stopped = true;
       wake?.();
@@ -184,7 +229,7 @@ export function startDelivery<T>(
       checkSettled();
     },
     drained(): Promise<void> {
-      if (hasFailed) return Promise.reject(failed);
+      if (hasFailed) return Promise.reject(failure?.error);
       if (inFlight === 0 && (queue.size === 0 || stopped)) {
         if (stopped) unsubscribeOnce();
         return Promise.resolve();

@@ -110,34 +110,31 @@ export function formatEscapeHatchNotification(
   return `pi-caretaker escape hatch [${match.kind}]: a must-notify alert fired and bypassed triage. Investigate immediately.`;
 }
 
-/** @deprecated Test-only route result type; the production pipeline does not use this wrapper. */
+/** Result of routing an event through the deterministic bypass. */
 export interface EscapeHatchRoute {
   bypassedTriage: boolean;
   kind?: EscapeHatchKind;
 }
 
-/** @deprecated Test-only wrapper type; production routes via src/index.ts. */
+/** Continue ordinary or unconfigured events through triage. */
 export type TriageContinuation = (
   envelope: EventEnvelopeLike,
 ) => Promise<void>;
 
 /**
- * @deprecated Test-only route helper; the production pipeline routes in
- * src/index.ts.
- *
- * Check once before the model turn: on a match, notify exactly once and
- * never call the continuation; otherwise call it exactly once and send
- * nothing. A notify rejection propagates — no fallthrough to triage, no
- * claimed delivery, no retries.
+ * Check once before the model turn: on a configured match, notify exactly
+ * once and never call the continuation; otherwise call it exactly once and
+ * send nothing. A notify rejection propagates for the delivery pump to retry.
+ * Without a configured transport, matched events continue through triage.
  */
 export async function routeEscapeHatch(
   envelope: EventEnvelopeLike,
-  telegram: { notify(text: string): Promise<void> },
+  telegram: { notify(text: string): Promise<void> } | undefined,
   rules: readonly EscapeHatchRule[],
   continueToTriage: TriageContinuation,
 ): Promise<EscapeHatchRoute> {
   const match = matchEscapeHatch(envelope, rules);
-  if (match === undefined) {
+  if (match === undefined || telegram === undefined) {
     await continueToTriage(envelope);
     return { bypassedTriage: false };
   }

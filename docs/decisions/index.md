@@ -5,7 +5,7 @@ Code points at these files with `ADR-NNNN`.
 
 | id | title | status | date | rule in one sentence | pins |
 |----|-------|--------|------|----------------------|------|
-| [0001](0001-webhook-event-contract.md) | Webhook event contract | accepted | 2026-10-25 | 202 means queued in memory, never delivered; rejections use real status codes. | `tests/events.test.ts`, `tests/queue.test.ts`, `tests/e2e/webhook.e2e.test.ts` |
+| [0001](0001-webhook-event-contract.md) | Webhook event contract | accepted | 2026-10-25 | 202 means queued; delivery retries three times, then retains the event and returns 503 until restart with a loss record. | `tests/events.test.ts`, `tests/queue.test.ts`, `tests/index.test.ts`, `tests/e2e/webhook.e2e.test.ts` |
 | [0002](0002-untrusted-webhook-payload.md) | Untrusted webhook payload | accepted | 2026-10-25 | Webhook content is data, never instructions; it stays in the data channel. | `tests/untrusted-payload.test.ts` |
 | [0003](0003-one-telegram-path.md) | One Telegram path | accepted | 2026-10-25 | One managed Telegram adapter owns notifications, replies, and protocol signals; background turns stay silent. | `tests/inbound-message-state.test.ts`, `tests/telegram-path.test.ts`, `tests/index.test.ts`, `tests/index-relay.test.ts`, `tests/index-telegram.test.ts`, `tests/e2e/telegram-mock.e2e.test.ts`, `tests/e2e-local/caretaker.e2e-local.test.ts` |
 | [0004](0004-deterministic-escape-hatch.md) | Deterministic escape hatch | accepted | 2026-10-25 | Host-dark and backups-dead alerts bypass triage and must not depend on model judgment. | `tests/escape-hatch.test.ts` |

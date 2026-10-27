@@ -220,8 +220,14 @@ describe("pi-caretaker extension entry", () => {
     const fake = createFakePi();
     const originalSend = fake.api.sendUserMessage.bind(fake.api);
     let fail = false;
+    let attempts = 0;
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { errors.push(args.join(" ")); });
     (fake.api as unknown as { sendUserMessage: (content: string, options?: unknown) => void }).sendUserMessage = (content, options) => {
-      if (fail) throw new Error("consumer failure");
+      if (fail) {
+        attempts += 1;
+        throw new Error("consumer failure");
+      }
       originalSend(content, options as never);
     };
     piCaretaker(fake.api);
@@ -232,7 +238,11 @@ describe("pi-caretaker extension entry", () => {
     await status.handler("", ctx as never);
     expect(fake.notifies.at(-1)?.message).toContain("delivery: operational");
     fail = true;
-    await postEvent(port, { message: "will fail" });
+    await postEvent(port, {
+      source: "monitor-x",
+      event: "database_unreachable",
+      message: "private event message must not appear in status",
+    });
     const deadline = Date.now() + 3000;
     let statusMessage = "";
     while (!statusMessage.includes("delivery: failed — restart required") && Date.now() < deadline) {
@@ -241,6 +251,12 @@ describe("pi-caretaker extension entry", () => {
       if (!statusMessage.includes("delivery: failed — restart required")) await new Promise((resolve) => setTimeout(resolve, 10));
     }
     expect(statusMessage).toContain("delivery: failed — restart required");
+    expect(statusMessage).toContain("lostEvent: event=database_unreachable origin=monitor-x");
+    expect(statusMessage).toMatch(/lostEvent: .* at=\d{4}-\d{2}-\d{2}T.* attempts=3 error=Error/);
+    expect(statusMessage).not.toContain("private event message must not appear in status");
+    expect(attempts).toBe(3);
+    expect(errors.some((line) => line.includes("delivery-lost") && line.includes("event=database_unreachable") && line.includes("origin=monitor-x") && line.includes("error=Error"))).toBe(true);
+    expect(errors.join("\n")).not.toContain("private event message must not appear in status");
     await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
 
@@ -453,6 +469,39 @@ describe("pi-caretaker extension entry", () => {
     expect(result.details).toEqual({ sent: false });
     expect(result.content[0]?.text).toContain("not sent");
     expect(lines.some((line) => line.includes("notify-failed") && line.includes("Telegram delivery failed"))).toBe(true);
+  });
+
+  it("retries a transient escape-hatch notify failure and keeps the pump operational", async () => {
+    testEnv();
+    const fake = createFakePi();
+    const delivered: string[] = [];
+    let attempts = 0;
+    const controls = piCaretaker(fake.api);
+    controls.attachTelegram({
+      notify: async (text) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("transient Telegram failure");
+        delivered.push(text);
+      },
+    });
+    const ctx = fakeContext(fake.notifies);
+    const port = await startedPort(fake, ctx);
+
+    const { status } = await postEvent(port, {
+      source: "monitor-x",
+      event: "host_dark",
+      message: "server is dark",
+    });
+    expect(status).toBe(202);
+    await waitForNotifies(delivered, 1);
+
+    expect(attempts).toBe(2);
+    expect(delivered).toHaveLength(1);
+    expect(fake.sent).toHaveLength(0);
+    await fake.commands.get("caretaker-status")?.handler("", ctx as never);
+    expect(fake.notifies.at(-1)?.message).toContain("delivery: operational");
+    expect(fake.notifies.at(-1)?.message).not.toContain("lostEvent:");
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
 
   it("notifies through the attached transport for a must-notify event and submits no turn", async () => {

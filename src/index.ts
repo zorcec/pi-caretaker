@@ -39,8 +39,8 @@ import {
 import { createWebhookListener } from "./listener.js";
 import { buildTriageRequest, type EventEnvelope } from "./events.js";
 import {
-  formatEscapeHatchNotification,
-  matchEscapeHatch,
+  MUST_NOTIFY_RULES,
+  routeEscapeHatch,
 } from "./escape-hatch.js";
 import { getHealth as buildHealth, type HealthReport } from "./health.js";
 import { ANSWER_CHUNK_OFFER, formatAnswerChunks } from "./answer-chunks.js";
@@ -92,7 +92,7 @@ interface CaretakerSession {
   config: CaretakerConfig;
   queue: SignallingQueue<EventEnvelope>;
   server: Server;
-  pump: DeliveryController;
+  pump: DeliveryController<EventEnvelope>;
   address: string;
 }
 
@@ -134,6 +134,21 @@ export interface CaretakerControls {
 export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTransportDeps): CaretakerControls {
   let session: CaretakerSession | undefined;
   let telegram: NotifyTransport | undefined;
+  const safeLossField = (value: string | undefined): string => {
+    let field = value ?? "unknown";
+    if (session?.config.telegramBotToken !== undefined) {
+      field = field.replaceAll(session.config.telegramBotToken, "[REDACTED]");
+    }
+    if (session?.config.telegramChatId !== undefined && session.config.telegramChatId.length >= 6) {
+      field = field.replaceAll(session.config.telegramChatId, "[REDACTED]");
+    }
+    field = field.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80);
+    return field || "unknown";
+  };
+  const errorClass = (error: unknown): string => {
+    const name = error instanceof Error ? error.name : "";
+    return ["Error", "TypeError", "RangeError", "AbortError", "GrammyError", "HttpError"].includes(name) ? name : "Error";
+  };
   let managedTelegram: ManagedTelegramAdapter | undefined;
   const attachedManagedAdapters = new WeakSet<ManagedTelegramAdapter>();
   let inboundMessageCount = 0;
@@ -435,16 +450,10 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
   };
 
   async function deliver(event: { body: EventEnvelope }): Promise<void> {
-    const envelope = event.body;
-    const match = matchEscapeHatch(envelope);
-    if (match !== undefined && telegram !== undefined) {
-      await telegram.notify(formatEscapeHatchNotification(match, envelope));
-      return;
-    }
-    // No transport configured yet (Telegram ticket): triage is the only
-    // channel, so fall through loudly rather than dropping the event.
-    pi.sendUserMessage(composeTriageTurn(envelope), {
-      deliverAs: "followUp",
+    await routeEscapeHatch(event.body, telegram, MUST_NOTIFY_RULES, async (envelope) => {
+      pi.sendUserMessage(composeTriageTurn(envelope), {
+        deliverAs: "followUp",
+      });
     });
   }
 
@@ -472,7 +481,13 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
     const queue = createEventQueue<EventEnvelope>({
       capacity: config.queueCapacity,
     });
-    const pump = startDelivery(queue, deliver);
+    const pump = startDelivery(queue, deliver, {
+      onTerminalFailure: ({ event, error, attempts, at }) => {
+        console.error(
+          `[pi-caretaker] delivery-lost event=${safeLossField(event.body.event)} origin=${safeLossField(event.body.source ?? event.body.host)} at=${at} attempts=${attempts} error=${errorClass(error)}`,
+        );
+      },
+    });
     const server = createWebhookListener({
       token: config.token,
       version: EXTENSION_VERSION,
@@ -692,6 +707,12 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
               `inboundMessageCount: ${inboundMessageCount}`,
               `telegramLastError: ${lastError === undefined ? "null" : `${lastErrorMessage} at ${lastError.at}`}`,
             ];
+      const deliveryFailure = session.pump.getFailure();
+      const lostEventStatus = deliveryFailure === undefined
+        ? []
+        : [
+            `lostEvent: event=${safeLossField(deliveryFailure.event.body.event)} origin=${safeLossField(deliveryFailure.event.body.source ?? deliveryFailure.event.body.host)} at=${deliveryFailure.at} attempts=${deliveryFailure.attempts} error=${errorClass(deliveryFailure.error)}`,
+          ];
       ctx.ui.notify(
         [
           `pi-caretaker ${EXTENSION_VERSION}: listening on ${session.address}`,
@@ -699,8 +720,9 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
           `delivery: ${session.pump.hasFailed() ? "failed — restart required" : "operational"}`,
           `telegram: ${telegram !== undefined ? "configured" : "not configured — triage only"}`,
           ...managedTelegramStatus,
+          ...lostEventStatus,
         ].join("\n"),
-        lastError === undefined ? "info" : "error",
+        lastError === undefined && deliveryFailure === undefined ? "info" : "error",
       );
     },
   });

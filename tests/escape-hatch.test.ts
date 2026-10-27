@@ -150,6 +150,20 @@ describe("deterministic escape hatch", () => {
       expect(seen).toEqual([input]);
     });
 
+    it("continues a matched event through triage when no transport is configured", async () => {
+      const seen: EventEnvelopeLike[] = [];
+      const result = await routeEscapeHatch(
+        envelope({ event: "host_dark_fixture" }),
+        undefined,
+        RULES,
+        async (event) => { seen.push(event); },
+      );
+
+      expect(result).toEqual({ bypassedTriage: false });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.event).toBe("host_dark_fixture");
+    });
+
     it("bypasses triage for canonical vocabulary using the default rules", async () => {
       const telegram = createRecordingTelegram();
       let continuations = 0;

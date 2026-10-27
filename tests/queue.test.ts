@@ -1,19 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createEventQueue,
+  DELIVERY_MAX_ATTEMPTS,
+  DELIVERY_RETRY_BASE_DELAY_MS,
   startDelivery,
   type EventQueue,
 } from "../src/queue.js";
 
 /**
- * Pins the bounded in-memory FIFO (ADR-0001, queue half).
- *
- * The interface in src/queue.ts promises admission/full results but ships no
- * behavior; every case below fails against the interface-only file (missing
- * exports) and passes once the FIFO exists. Chosen defaults, all flagged for
- * the owner on ticket 6a8e1458: sequence starts at 0, capacity counts
- * retained waiting events only, a consumer throw stops the pump and surfaces
- * through drained(), and capacity must be a positive integer (RangeError).
+ * Pins the bounded in-memory FIFO and retrying delivery pump (ADR-0001).
+ * Sequence numbers start at zero, capacity counts retained events, and
+ * consumer failures retry three times with a deterministic backoff before
+ * terminal failure leaves the failed body at the queue front.
  */
 describe("bounded in-memory queue", () => {
   describe("createEventQueue", () => {
@@ -145,19 +143,96 @@ describe("bounded in-memory queue", () => {
       expect(seen).toEqual(["a", "b", "c"]);
     });
 
-    it("stops on consumer failure and surfaces the error; the failed event stays queued", async () => {
+    it("retries a transient consumer failure and delivers successfully without terminal state", async () => {
+      const queue = createEventQueue<string>({ capacity: 2 });
+      const failure = new Error("transient consumer failure");
+      const seen: string[] = [];
+      const delays: number[] = [];
+      const terminalFailures: unknown[] = [];
+      let attempts = 0;
+      const pump = startDelivery(queue, async (event) => {
+        attempts += 1;
+        if (attempts === 1) throw failure;
+        seen.push(event.body);
+      }, {
+        delay: async (milliseconds) => { delays.push(milliseconds); },
+        onTerminalFailure: (failure) => { terminalFailures.push(failure); },
+      });
+      queue.enqueue("recover me");
+
+      await pump.drained();
+
+      expect(attempts).toBe(2);
+      expect(seen).toEqual(["recover me"]);
+      expect(delays).toEqual([DELIVERY_RETRY_BASE_DELAY_MS]);
+      expect(queue.size).toBe(0);
+      expect(pump.hasFailed()).toBe(false);
+      expect(pump.getFailure()).toBeUndefined();
+      expect(terminalFailures).toEqual([]);
+    });
+
+    it("retries three times, then fails terminally with the failed body at the queue front", async () => {
       const queue = createEventQueue<string>({ capacity: 3 });
       queue.enqueue("ok");
-      queue.enqueue("boom");
+      queue.enqueue("failed body must be retained");
       queue.enqueue("waiting");
       const failure = new Error("consumer blew up");
+      let failureAttempts = 0;
       const pump = startDelivery<string>(queue, async (event) => {
-        if (event.body === "boom") throw failure;
-      });
+        if (event.body === "failed body must be retained") {
+          failureAttempts += 1;
+          throw failure;
+        }
+      }, { delay: async () => undefined });
 
       await expect(pump.drained()).rejects.toBe(failure);
-      expect(queue.size).toBe(1);
+      expect(failureAttempts).toBe(DELIVERY_MAX_ATTEMPTS);
+      expect(pump.hasFailed()).toBe(true);
+      expect(pump.getFailure()).toMatchObject({
+        attempts: DELIVERY_MAX_ATTEMPTS,
+        error: failure,
+      });
+      expect(queue.size).toBe(2);
+      expect(queue.peek()?.body).toBe("failed body must be retained");
+      expect(queue.dequeue()?.body).toBe("failed body must be retained");
       expect(queue.dequeue()?.body).toBe("waiting");
+    });
+
+    it("pins the bounded retry backoff schedule with fake timers", async () => {
+      vi.useFakeTimers();
+      try {
+        expect(DELIVERY_MAX_ATTEMPTS).toBe(3);
+        expect(DELIVERY_RETRY_BASE_DELAY_MS).toBe(250);
+        const queue = createEventQueue<string>({ capacity: 1 });
+        const failure = new Error("always fails");
+        let attempts = 0;
+        const pump = startDelivery(queue, async () => {
+          attempts += 1;
+          throw failure;
+        });
+        queue.enqueue("retry schedule");
+        const settled = pump.drained().catch((error: unknown) => error);
+        const flushMicrotasks = async (): Promise<void> => {
+          for (let index = 0; index < 8; index += 1) await Promise.resolve();
+        };
+
+        await flushMicrotasks();
+        expect(attempts).toBe(1);
+        expect(vi.getTimerCount()).toBe(1);
+        await vi.advanceTimersByTimeAsync(249);
+        expect(attempts).toBe(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(attempts).toBe(2);
+        expect(vi.getTimerCount()).toBe(1);
+        await vi.advanceTimersByTimeAsync(499);
+        expect(attempts).toBe(2);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(attempts).toBe(3);
+        await expect(settled).resolves.toBe(failure);
+        expect(pump.hasFailed()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("stop() halts delivery after the in-flight item; the rest stays queued", async () => {
