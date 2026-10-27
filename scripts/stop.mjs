@@ -14,6 +14,9 @@ export function resolveStopPlan(pidText, fileExists = true, kill = (pid, signal)
   try { kill(pid, 0); return { running: true, pid }; }
   catch (error) { if (error.code === "EPERM") return { running: true, pid }; return { running: false, reason: "stale", pid }; }
 }
+export function normalizeCmdline(cmdline) {
+  return String(cmdline).replaceAll("\0", " ");
+}
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Stop the PID recorded by the caretaker pidfile, never a port's arbitrary holder. */
@@ -27,7 +30,7 @@ export async function stopPreviousInstance({
   now = () => Date.now(),
   timeoutMs = 5000,
   pollIntervalMs = 100,
-  readCmdline = (pid) => readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\\0", " "),
+  readCmdline = (pid) => normalizeCmdline(readFileSync(`/proc/${pid}/cmdline`, "utf8")),
 }) {
   if (!exists(pidFile)) return { stopped: false, reason: "missing" };
   const pid = parsePidFile(readFile(pidFile, "utf8"));

@@ -173,6 +173,40 @@ describe("webhook listener (POST /events, GET /health)", () => {
     expect(queueSize()).toBe(1);
   });
 
+  it("returns 401 before rejecting an unauthenticated wrong content type", async () => {
+    const { baseUrl } = await listen();
+
+    const response = await postEvents(baseUrl, JSON.stringify({ message: "x" }), undefined, "text/plain");
+
+    expect(response.status).toBe(401);
+    expect(response.json).toEqual({ error: "missing or invalid bearer token" });
+  });
+
+  it("returns 401 before exposing a failed delivery pump to unauthenticated requests", async () => {
+    const queue = createEventQueue<EventEnvelope>({ capacity: 1 });
+    server = createWebhookListener({ token: TOKEN, version: "9.9.9-test", queue, isOperational: () => false });
+    await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+    const { port } = server?.address() as AddressInfo;
+
+    const response = await postEvents(`http://127.0.0.1:${port}`, JSON.stringify({ message: "x" }), undefined);
+
+    expect(response.status).toBe(401);
+    expect(response.json).toEqual({ error: "missing or invalid bearer token" });
+  });
+
+  it("does not admit a valid body when the request stream errors after a chunk", async () => {
+    const running = await listen();
+    const body = JSON.stringify({ message: "complete JSON before stream error" });
+    server?.once("request", (request) => {
+      request.once("data", () => request.emit("error", new Error("injected request stream failure")));
+    });
+
+    const response = await postEvents(running.baseUrl, body, `Bearer ${TOKEN}`);
+
+    expect(response.status).not.toBe(202);
+    expect(queueSize()).toBe(0);
+  });
+
   it("rejects a chunked body that exceeds the cap mid-stream with 413", async () => {
     const running = await listen(16);
     const oversized = `{"message":"${"z".repeat(MAX_EVENT_BODY_BYTES)}"}`;

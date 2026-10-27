@@ -87,6 +87,15 @@ function tokensEqual(presented: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** Check bearer authorization without reading or parsing the request body. */
+export function isAuthorizedBearerToken(
+  authorization: string | undefined,
+  expectedToken: string,
+): boolean {
+  const presented = presentedBearerToken({ authorization });
+  return presented !== undefined && tokensEqual(presented, expectedToken);
+}
+
 /**
  * Admission for POST /events (ADR-0001, ADR-0002).
  *
@@ -101,8 +110,7 @@ export function handlePostEvents(
   expectedToken: string,
   queue: EventQueue<EventEnvelope>,
 ): PostEventsResult {
-  const presented = presentedBearerToken(req.headers);
-  if (presented === undefined || !tokensEqual(presented, expectedToken)) {
+  if (!isAuthorizedBearerToken(req.headers.authorization, expectedToken)) {
     return { status: 401, error: "missing or invalid bearer token" };
   }
   const byteLength =

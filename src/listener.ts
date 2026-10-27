@@ -4,9 +4,9 @@
  * Native node:http only — no web framework. Routes exactly GET /health and
  * POST /events; every other path is 404 and every wrong method is 405 with
  * an Allow header. Security order per request: route, then method, then
- * bearer token, then the streamed body cap, then JSON/schema admission.
- * Error bodies stay generic strings; statuses are the contract. No token
- * or payload text is ever logged or echoed.
+ * bearer token, then pump health and content type, then the streamed body
+ * cap, then JSON/schema and queue admission. Error bodies stay generic strings;
+ * statuses are the contract. No token or payload text is ever logged or echoed.
  */
 import {
   createServer,
@@ -16,6 +16,7 @@ import {
 } from "node:http";
 import {
   handlePostEvents,
+  isAuthorizedBearerToken,
   MAX_EVENT_BODY_BYTES,
   type EventEnvelope,
 } from "./events.js";
@@ -64,7 +65,7 @@ function readCappedBody(request: IncomingMessage): Promise<Buffer | undefined> {
     request.resume();
     return Promise.resolve(undefined);
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
     let done = false;
@@ -85,7 +86,11 @@ function readCappedBody(request: IncomingMessage): Promise<Buffer | undefined> {
       chunks.push(chunk);
     });
     request.on("end", () => finish(Buffer.concat(chunks)));
-    request.on("error", () => finish(Buffer.concat(chunks)));
+    request.on("error", (error) => {
+      if (done) return;
+      done = true;
+      reject(error);
+    });
   });
 }
 
@@ -139,6 +144,11 @@ async function handleRequest(
       return;
     }
     const authorization = request.headers.authorization;
+    if (!isAuthorizedBearerToken(authorization, token)) {
+      sendJson(response, 401, { error: "missing or invalid bearer token" });
+      request.resume();
+      return;
+    }
     if (!isOperational()) {
       sendJson(response, 503, { error: "delivery failed; restart required" });
       request.resume();

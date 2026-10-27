@@ -159,6 +159,28 @@ describe("supervisor protocol", () => {
     expect(timerCleared).toBe("timer-handle");
   });
 
+  it.each(["close", "error"] as const)("resolves null when supervisor output ends by %s", async (event) => {
+    const stream = new EventEmitter();
+    let cleared = 0;
+    const pending = waitForFirstLine(stream, {
+      setTimeoutFn: () => "timer-handle",
+      clearTimeoutFn: () => { cleared += 1; },
+    });
+    let result: string | null | undefined;
+    void pending.then((value) => { result = value; });
+
+    if (event === "error") {
+      expect(() => stream.emit("error", new Error("supervisor output failed"))).not.toThrow();
+    } else {
+      stream.emit("close");
+    }
+    await Promise.resolve();
+
+    expect(result).toBeNull();
+    expect(cleared).toBe(1);
+    expect(stream.listenerCount("data")).toBe(0);
+  });
+
   it("returns null when its injected timer expires", async () => {
     const stream = new EventEmitter();
     let expire: (() => void) | undefined;
@@ -182,6 +204,18 @@ describe("supervisor protocol", () => {
     await expect(pending).resolves.toBeNull();
     expect(timerCleared).toBe("timer-handle");
     expect(stream.listenerCount("data")).toBe(0);
+  });
+});
+
+describe("supervisor backoff", () => {
+  it("resets the restart delay after a child lives for at least 60 seconds", async () => {
+    const startModule = await import("../../scripts/start.mjs") as unknown as Record<string, unknown>;
+    const calculateDelay = startModule["getSupervisorRestartDelay"];
+    expect(calculateDelay).toBeTypeOf("function");
+    if (typeof calculateDelay !== "function") throw new Error("supervisor backoff helper not exported");
+
+    expect(calculateDelay(59_999, 8_000, 1_000)).toBe(8_000);
+    expect(calculateDelay(60_000, 8_000, 1_000)).toBe(1_000);
   });
 });
 
@@ -562,6 +596,21 @@ describe("stop pure functions", () => {
     expect(signals.at(-1)).toEqual([-73, "SIGKILL"]);
     expect(now).toBe(5000);
     expect(removed).toEqual(["/fixture/pid"]);
+  });
+});
+
+describe("stop process command line", () => {
+  it("replaces embedded NUL separators without replacing literal backslash-zero text", async () => {
+    const stopModule = await import("../../scripts/stop.mjs") as unknown as Record<string, unknown>;
+    const normalize = stopModule["normalizeCmdline"];
+    expect(normalize).toBeTypeOf("function");
+    if (typeof normalize !== "function") throw new Error("cmdline normalizer not exported");
+
+    const nul = String.fromCharCode(0);
+    const embedded = ["node", "scripts/start.mjs", "--supervise", ""].join(nul);
+    expect(normalize(embedded)).toBe("node scripts/start.mjs --supervise ");
+    const literal = String.raw`\\0 text`;
+    expect(normalize(literal)).toBe(literal);
   });
 });
 

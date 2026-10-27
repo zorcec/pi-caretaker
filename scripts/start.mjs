@@ -152,6 +152,12 @@ export function parseSupervisorLine(line) {
   return null;
 }
 
+const STABLE_CHILD_RUN_MS = 60_000;
+
+export function getSupervisorRestartDelay(livedMs, currentDelay, initialDelay) {
+  return livedMs >= STABLE_CHILD_RUN_MS ? initialDelay : currentDelay;
+}
+
 /**
  * Read the supervisor's first stdout line with a deadline. Injectable
  * timer keeps unit tests instant and network-free.
@@ -162,6 +168,8 @@ export function waitForFirstLine(stream, { timeoutMs = 15000, setTimeoutFn = set
     const done = (value) => {
       clearTimeoutFn(timer);
       stream.removeListener("data", onData);
+      stream.removeListener("close", onClose);
+      stream.removeListener("error", onError);
       resolve(value);
     };
     const timer = setTimeoutFn(() => done(null), timeoutMs);
@@ -170,7 +178,11 @@ export function waitForFirstLine(stream, { timeoutMs = 15000, setTimeoutFn = set
       const end = buffer.indexOf("\n");
       if (end >= 0) done(buffer.slice(0, end));
     };
+    const onClose = () => done(null);
+    const onError = () => done(null);
     stream.on("data", onData);
+    stream.on("close", onClose);
+    stream.on("error", onError);
   });
 }
 
@@ -222,7 +234,8 @@ async function supervisorMain() {
   process.once("SIGTERM", terminate);
   process.once("SIGINT", terminate);
   let consecutiveShort = 0;
-  let delay = Number(process.env.PI_CARETAKER_SUPERVISE_BACKOFF_MS ?? 1000);
+  const initialDelay = Number(process.env.PI_CARETAKER_SUPERVISE_BACKOFF_MS ?? 1000);
+  let delay = initialDelay;
   try {
     while (!stopping) {
       const began = Date.now();
@@ -238,13 +251,14 @@ async function supervisorMain() {
       });
       if (stopping) break;
       const lived = Date.now() - began;
-      consecutiveShort = lived < 60_000 ? consecutiveShort + 1 : 0;
+      consecutiveShort = lived < STABLE_CHILD_RUN_MS ? consecutiveShort + 1 : 0;
       if (consecutiveShort >= 5 || outcome.error) {
         const message = outcome.error ? `Could not start Pi: ${outcome.error.message}` : `Pi exited after ${consecutiveShort} consecutive short-lived respawns`;
         console.log(`ERROR:${message}`);
         console.error(`[pi-caretaker] ERROR: ${message}`);
         break;
       }
+      delay = getSupervisorRestartDelay(lived, delay, initialDelay);
       await new Promise((resolve) => setTimeout(resolve, delay));
       delay = Math.min(delay * 2, 30_000);
     }
