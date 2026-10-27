@@ -2,4 +2,4 @@
 "pi-caretaker": minor
 ---
 
-The `/model` picker now lists only chat models currently available to `setModel`, reports when none are available, and gives safe provider-auth diagnostics when a model switch fails.
+The `/model` picker can use an owner-ordered list of up to five available chat models from root `caretaker.config.json`, falling back safely to Pi's available-model list.

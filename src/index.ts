@@ -44,6 +44,7 @@ import {
 } from "./escape-hatch.js";
 import { getHealth as buildHealth, type HealthReport } from "./health.js";
 import { ANSWER_CHUNK_OFFER, formatAnswerChunks } from "./answer-chunks.js";
+import { prioritizeConfiguredModels, readConfiguredModelIds } from "./model-picker.js";
 import {
   clearInboundMessageStates,
   markInboundMessageActive,
@@ -381,7 +382,8 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
       }
       modelPickerSnapshots.clear();
       void (async () => {
-        const models = await ctx.modelRegistry.getAvailableOfType("chat");
+        const availableModels = await ctx.modelRegistry.getAvailableOfType("chat");
+        const models = prioritizeConfiguredModels(availableModels, readConfiguredModelIds());
         if (models.length === 0) {
           await sendControlReply("No chat models are available; configure a provider first.", messageId);
           return;
