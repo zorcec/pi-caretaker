@@ -184,46 +184,95 @@ describe("pi-caretaker owner relay and command entry", () => {
     await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("model: unavailable", 24));
   });
 
-  it("/model picker keeps long registry ids within Telegram callback data and selects by index", async () => {
+  it("/model picker uses only available models and selects by the saved index", async () => {
     const fake = createFakePi(); const attached = attachManaged(fake);
-    const model = { provider: "very-long-provider-name", id: "m".repeat(90) };
-    const find = vi.fn(() => model);
-    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType: () => [model], find }, model: undefined };
+    const hiddenModel = { provider: "provider-without-auth", id: "not-available" };
+    const availableModel = { provider: "provider-with-auth", id: "m".repeat(90) };
+    const getModelsOfType = vi.fn(() => [hiddenModel, availableModel]);
+    const getAvailableOfType = vi.fn(async () => [availableModel]);
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType, getAvailableOfType }, model: undefined };
     await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
     attached.command("model", 22);
     await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
-    const markup = attached.managed.sendMessage.mock.calls.at(-1)?.[2] as { inline_keyboard: { callback_data: string }[][] };
-    const data = markup.inline_keyboard.flat()[0]?.callback_data ?? "";
-    expect(new TextEncoder().encode(data).length).toBeLessThanOrEqual(64);
-    attached.callback(data, 73);
-    await vi.waitFor(() => expect((fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel).toHaveBeenCalledWith(model));
+    const markup = attached.managed.sendMessage.mock.calls.at(-1)?.[2] as { inline_keyboard: { text: string; callback_data: string }[][] };
+    expect(markup.inline_keyboard.flat().map(({ text, callback_data }) => [text, callback_data])).toEqual([[`provider-with-auth/${availableModel.id}`, "md:0"]]);
+    expect(new TextEncoder().encode(markup.inline_keyboard.flat()[0]?.callback_data ?? "").length).toBeLessThanOrEqual(64);
+    expect(getModelsOfType).not.toHaveBeenCalled();
+    expect(getAvailableOfType).toHaveBeenCalledWith("chat");
+    attached.callback("md:0", 73);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenLastCalledWith(`model: provider-with-auth/${availableModel.id} (session-scoped)`, 73));
+    expect((fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel).toHaveBeenCalledWith(availableModel);
+  });
+
+  it("/model reports when no authenticated chat models are available", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const getModelsOfType = vi.fn(() => [{ provider: "provider", id: "known-model" }]);
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType, getAvailableOfType: vi.fn(async () => []) }, model: undefined };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("model", 28);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalledWith("No chat models are available; configure a provider first.", 28));
+    expect(attached.managed.sendMessage.mock.calls.filter(([, messageId]) => messageId === 28)).toHaveLength(1);
+    expect(getModelsOfType).not.toHaveBeenCalled();
   });
 
   it("/model rejects an out-of-range picker index with a fixed reply", async () => {
     const fake = createFakePi(); const attached = attachManaged(fake);
     const model = { provider: "provider", id: "model" };
-    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType: () => [model] }, model: undefined };
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getAvailableOfType: async () => [model] }, model: undefined };
     await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
     attached.command("model", 27);
     await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
-    await Promise.resolve();
     attached.callback("md:8", 73);
     await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenLastCalledWith("invalid selection", 73));
     expect((fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel).not.toHaveBeenCalled();
   });
 
-  it("/model picker lists registry models and unauthenticated selection reports failure", async () => {
+  it("/model reports safe auth diagnostics when the model switch fails", async () => {
     const fake = createFakePi(); const attached = attachManaged(fake);
     const model = { provider: "opencode-go", id: "mimo-v2.6-flash" };
-    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getModelsOfType: () => [model], find: () => model }, model: undefined };
+    const tokenLikeText = "sk-live-sensitive-value";
+    const ctx = {
+      ...fakeContext(fake.notifies),
+      modelRegistry: {
+        getAvailableOfType: async () => [model],
+        getProviderAuthStatus: vi.fn(() => ({ configured: true, source: "environment", label: tokenLikeText })),
+        getError: vi.fn(() => `invalid config ${tokenLikeText}`),
+      },
+      model: undefined,
+    };
     await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
     attached.command("model", 22);
     await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
-    const markup = attached.managed.sendMessage.mock.calls.at(-1)?.[2] as { inline_keyboard: { callback_data: string }[][] };
-    expect(markup.inline_keyboard.flat().map((button) => button.callback_data)).toEqual(["md:0"]);
+    (fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel.mockResolvedValue(false);
+    attached.callback("md:0", 73);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenLastCalledWith(
+      "Model switch failed for opencode-go. Auth is configured (environment); model registry error is present.",
+      73,
+    ));
+    expect(attached.managed.sendMessage.mock.calls.flat().join(" ")).not.toContain(tokenLikeText);
+  });
+
+  it("/model keeps the flat failure reply only when diagnostics are unavailable", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const model = { provider: "provider", id: "model" };
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getAvailableOfType: async () => [model] }, model: undefined };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("model", 22);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
     (fake.api as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel.mockResolvedValue(false);
     attached.callback("md:0", 73);
     await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenLastCalledWith("provider not authenticated", 73));
+  });
+
+  it("/model keeps the successful session-scoped switch reply", async () => {
+    const fake = createFakePi(); const attached = attachManaged(fake);
+    const model = { provider: "provider", id: "model" };
+    const ctx = { ...fakeContext(fake.notifies), modelRegistry: { getAvailableOfType: async () => [model] }, model: undefined };
+    await fake.handlers.get("before_agent_start")?.({ messageType: "user", prompt: "idle" }, ctx as never);
+    attached.command("model", 22);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenCalled());
+    attached.callback("md:0", 73);
+    await vi.waitFor(() => expect(attached.managed.sendMessage).toHaveBeenLastCalledWith("model: provider/model (session-scoped)", 73));
   });
 
   it("malformed picker callback returns a fixed error without throwing", async () => {

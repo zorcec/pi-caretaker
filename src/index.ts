@@ -77,6 +77,22 @@ const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "ma
 type ThinkingLevel = typeof THINKING_LEVELS[number];
 type ModelPickerModel = NonNullable<ReturnType<ExtensionContext["modelRegistry"]["find"]>>;
 
+function formatModelSelectionFailure(
+  registry: ExtensionContext["modelRegistry"] | undefined,
+  provider: string,
+): string {
+  if (registry === undefined) return "provider not authenticated";
+  try {
+    const authStatus = registry.getProviderAuthStatus(provider);
+    const source = authStatus.source === undefined ? "" : ` (${authStatus.source})`;
+    const registryErrorPresent = (registry.getError() ?? "").length > 0;
+    const safeProvider = provider.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 100);
+    return `Model switch failed for ${safeProvider}. Auth is ${authStatus.configured ? "configured" : "not configured"}${source}${registryErrorPresent ? "; model registry error is present" : ""}.`;
+  } catch {
+    return "provider not authenticated";
+  }
+}
+
 function sanitizeTelegramLogError(error: unknown, secrets: readonly (string | undefined)[]): string {
   let message = error instanceof Error ? error.message : String(error);
   for (const secret of secrets) {
@@ -363,17 +379,20 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
         void sendControlReply("model: unavailable", messageId).catch((error: unknown) => logControlFailure("model-picker", error));
         return;
       }
-      const models = ctx.modelRegistry.getModelsOfType("chat");
-      const keyboard = new InlineKeyboard();
-      models.forEach((model, index) => {
-        keyboard.text(`${ctx.model?.provider === model.provider && ctx.model.id === model.id ? "✓ " : ""}${model.provider}/${model.id}`, `md:${index}`).row();
-      });
       modelPickerSnapshots.clear();
-      void adapter.sendMessage("Choose model (this session only):", messageId, keyboard)
-        .then((pickerMessageId) => {
-          if (pickerMessageId !== 0) modelPickerSnapshots.set(pickerMessageId, models);
-        })
-        .catch((error: unknown) => logControlFailure("model-picker", error));
+      void (async () => {
+        const models = await ctx.modelRegistry.getAvailableOfType("chat");
+        if (models.length === 0) {
+          await sendControlReply("No chat models are available; configure a provider first.", messageId);
+          return;
+        }
+        const keyboard = new InlineKeyboard();
+        models.forEach((model, index) => {
+          keyboard.text(`${ctx.model?.provider === model.provider && ctx.model.id === model.id ? "✓ " : ""}${model.provider}/${model.id}`, `md:${index}`).row();
+        });
+        const pickerMessageId = await adapter.sendMessage("Choose model (this session only):", messageId, keyboard);
+        if (pickerMessageId !== 0) modelPickerSnapshots.set(pickerMessageId, models);
+      })().catch((error: unknown) => logControlFailure("model-picker", error));
     });
     adapter.onCommand("compact", (messageId) => {
       const ctx = latestContext;
@@ -409,7 +428,11 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
             return;
           }
           const selected = await pi.setModel(model);
-          await sendControlReply(selected ? `model: ${model.provider}/${model.id} (this session only)` : "provider not authenticated", messageId);
+          if (selected) {
+            await sendControlReply(`model: ${model.provider}/${model.id} (session-scoped)`, messageId);
+            return;
+          }
+          await sendControlReply(formatModelSelectionFailure(latestContext?.modelRegistry, model.provider), messageId);
           return;
         }
         await sendControlReply("invalid selection", messageId);
