@@ -677,10 +677,12 @@ export default function piCaretaker(pi: ExtensionAPI, telegramDeps?: TelegramTra
       const lastError = managedTelegram?.getLastError();
       let lastErrorMessage = lastError?.message;
       if (lastErrorMessage !== undefined) {
-        for (const secret of [session.config.telegramBotToken, session.config.telegramChatId]) {
-          if (secret !== undefined) {
-            lastErrorMessage = lastErrorMessage.replaceAll(secret, "[REDACTED]");
-          }
+        const { telegramBotToken, telegramChatId } = session.config;
+        if (telegramBotToken !== undefined) {
+          lastErrorMessage = lastErrorMessage.replaceAll(telegramBotToken, "[REDACTED]");
+        }
+        if (telegramChatId !== undefined && telegramChatId.length >= 6) {
+          lastErrorMessage = lastErrorMessage.replaceAll(telegramChatId, "[REDACTED]");
         }
       }
       const managedTelegramStatus =

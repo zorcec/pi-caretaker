@@ -110,16 +110,21 @@ export function formatEscapeHatchNotification(
   return `pi-caretaker escape hatch [${match.kind}]: a must-notify alert fired and bypassed triage. Investigate immediately.`;
 }
 
+/** @deprecated Test-only route result type; the production pipeline does not use this wrapper. */
 export interface EscapeHatchRoute {
   bypassedTriage: boolean;
   kind?: EscapeHatchKind;
 }
 
+/** @deprecated Test-only wrapper type; production routes via src/index.ts. */
 export type TriageContinuation = (
   envelope: EventEnvelopeLike,
 ) => Promise<void>;
 
 /**
+ * @deprecated Test-only route helper; the production pipeline routes in
+ * src/index.ts.
+ *
  * Check once before the model turn: on a match, notify exactly once and
  * never call the continuation; otherwise call it exactly once and send
  * nothing. A notify rejection propagates — no fallthrough to triage, no

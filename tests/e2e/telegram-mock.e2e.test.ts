@@ -56,6 +56,28 @@ describe("mocked Telegram e2e (loopback Bot API)", () => {
       await fake.handlers.get("session_shutdown")?.({}, ctx);
     } finally { await mock.close(); }
   });
+  it("acknowledges paired non-text updates through the loopback Bot API and ignores strangers", async () => {
+    testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
+    const mock = await startMockTelegram();
+    try {
+      const fake = createFakePi();
+      piCaretaker(fake.api, { apiRoot: mock.url });
+      const ctx = fakeContext(fake.notifies);
+      await startedPort(fake, ctx);
+      mock.enqueueUpdates([
+        { update_id: 1, message: { message_id: 11, chat: { id: 99, type: "private" }, photo: [{ file_id: "stranger-photo" }], date: 1 } },
+        { update_id: 2, message: { message_id: 12, chat: { id: 42, type: "private" }, photo: [{ file_id: "paired-photo" }], date: 1 } },
+      ]);
+      await vi.waitFor(() => expect(mock.sends).toHaveLength(1));
+      expect(mock.sends).toEqual([{
+        chat_id: "42",
+        text: "pi-caretaker accepts text messages only — send text.",
+      }]);
+      expect(fake.sent).toEqual([]);
+      await fake.handlers.get("session_shutdown")?.({}, ctx);
+    } finally { await mock.close(); }
+  });
+
   it("records a queued reaction for the second owner message before its relay turn starts", async () => {
     testEnv({ PI_CARETAKER_TELEGRAM_BOT_TOKEN: "TEST:token", PI_CARETAKER_TELEGRAM_CHAT_ID: "42" });
     const mock = await startMockTelegram();

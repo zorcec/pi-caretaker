@@ -411,7 +411,7 @@ describe("resolveStartConfig", () => {
     if (plan.ok) expect(plan.args).not.toContain("rpc");
   });
 
-  it("uses the configured thinking level in both launch modes", () => {
+  it("uses the operator-scoped configured thinking level in both launch modes", () => {
     const rpc = resolveStartConfig({ env: { PI_CARETAKER_TOKEN: "t", PI_CARETAKER_THINKING: "high" }, hasDist: true });
     const foreground = resolveStartConfig({ env: { PI_CARETAKER_TOKEN: "t", PI_CARETAKER_THINKING: "high" }, hasDist: true, foreground: true });
     expect(rpc.ok && rpc.args.slice(-2)).toEqual(["--thinking", "high"]);

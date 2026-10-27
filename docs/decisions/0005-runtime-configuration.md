@@ -1,16 +1,17 @@
 # ADR-0005: Runtime configuration contract
-- Status: accepted · Date: 2026-10-25 · Decided by: owner
+- Status: accepted · Date: 2026-10-25 · Decided by: owner · Reaffirmed: 2026-10-27
 ## Decision
-Caretaker configuration arrives through the process environment and is
-validated at startup on `session_start`: `PI_CARETAKER_TOKEN` (required bearer
-token, no default), `PI_CARETAKER_HOST` (default 127.0.0.1),
+Caretaker runtime configuration arrives through the process environment and
+is validated at startup on `session_start`: `PI_CARETAKER_TOKEN` (required
+bearer token, no default), `PI_CARETAKER_HOST` (default 127.0.0.1),
 `PI_CARETAKER_PORT` (default 8787, 0 allowed for tests),
-`PI_CARETAKER_ALERTS_QUEUE_CAPACITY` (default 100, positive integer), the
+`PI_CARETAKER_ALERTS_QUEUE_CAPACITY` (default 100, positive integer), and the
 optional Telegram pair `PI_CARETAKER_TELEGRAM_BOT_TOKEN` /
 `PI_CARETAKER_TELEGRAM_CHAT_ID` (required together, no defaults; absent pair
-means triage-only mode), and `PI_CARETAKER_THINKING` (default `low`; one of
-off, minimal, low, medium, high, xhigh, max). The operator-owned `secrets.env`
-file is not part of caretaker runtime configuration.
+means triage-only mode). `PI_CARETAKER_THINKING` is an operator-tooling setting
+read by `scripts/start.mjs`; it selects Pi's launch-time thinking level and is
+not read or validated by the caretaker runtime. The operator-owned
+`secrets.env` file is not part of caretaker runtime configuration.
 Invalid values fail loudly with `MISSING_WEBHOOK_TOKEN`, `INVALID_PORT`,
 `INVALID_QUEUE_CAPACITY`, `MISSING_TELEGRAM_BOT_TOKEN`, or
 `MISSING_TELEGRAM_CHAT_ID`; values never appear in errors or logs.
@@ -36,3 +37,5 @@ or changed defaults update this ADR in the same change, or supersede it.
 - `tests/config.test.ts`
 - `scripts/manual-telegram/seclib.mjs`
 - `tests/manual-telegram.test.ts`
+- `scripts/start.mjs`
+- `tests/guards/operator-scripts.test.ts`

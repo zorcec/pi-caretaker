@@ -19,4 +19,7 @@ single outbound path.
 - `tests/inbound-message-state.test.ts`
 - `tests/telegram-path.test.ts`
 - `tests/index.test.ts`
+- `tests/index-relay.test.ts`
+- `tests/index-telegram.test.ts`
+- `tests/e2e/telegram-mock.e2e.test.ts`
 - `tests/e2e-local/caretaker.e2e-local.test.ts`

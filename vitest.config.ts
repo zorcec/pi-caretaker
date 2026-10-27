@@ -67,13 +67,12 @@ export default defineConfig({
           branches: 85,
           lines: 95,
         },
-        // Ratchet: measured 47.63 / 76.92 / 41.66 / 47.63 with all three
-        // guards importable. Pinned just below so any regression fails.
+        // Recursive glob aggregate includes manual Telegram scripts; measured at the reporter's precision.
         "scripts/**/*.mjs": {
-          statements: 47,
-          functions: 41,
-          branches: 76,
-          lines: 47,
+          statements: 61.5,
+          functions: 65.43,
+          branches: 77.34,
+          lines: 61.5,
         },
       },
     },

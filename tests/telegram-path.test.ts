@@ -6,8 +6,8 @@ import type {
 
 // Pins ADR-0003: this project owns the one Telegram conversation.
 describe("one telegram path", () => {
-  it("adapter interface carries exactly notify + onMessage", async () => {
-    // Type-level proof the contract is implementable with the right shapes.
+  it("transport interface retains notify and deprecated legacy onMessage", async () => {
+    // Deprecated compatibility seam only; paired ingress uses the managed adapter in production.
     const seen: string[] = [];
     const handler: TelegramMessageHandler = (text) => {
       seen.push(text);
@@ -26,8 +26,7 @@ describe("one telegram path", () => {
   });
 
   it("telegram module exposes no runtime sender yet — interface only", async () => {
-    // A second notifier starts as an extra runtime export. Until the adapter
-    // ticket lands, this module must stay type-only: zero runtime keys.
+    // The adapter lives in grammy.ts; this type module must stay runtime-empty.
     const ns = await import("../src/telegram/index.js");
     expect(Object.keys(ns)).toEqual([]);
   });

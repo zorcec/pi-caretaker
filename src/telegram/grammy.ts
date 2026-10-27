@@ -167,6 +167,7 @@ export async function createTelegramAdapter(
       console.error("[pi-caretaker] telegram dropped reason=chat_mismatch");
       return;
     }
+    // Ignore command-looking messages case-insensitively; `/STOP` is never relayed as owner text.
     if (text !== undefined && /^\/(?:stop|compact|thinking|model)(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(text)) return;
     if (text === undefined) {
       console.error("[pi-caretaker] telegram non-text acknowledged");

@@ -1,6 +1,6 @@
 ---
 name: caretaker-testing
-description: vitest is the single runner; what the five suites pin, the anti-placeholder rule, honesty codes, and how to run. Load before writing or changing any test in pi-caretaker.
+description: vitest is the single runner; source-named tests, the anti-placeholder rule, honesty codes, and how to run. Load before writing or changing any test in pi-caretaker.
 ---
 
 # Caretaker Testing
@@ -11,7 +11,7 @@ scripts. One runner means one include pattern (`tests/**/*.test.ts` in
 runner would split the suite and silently unrun half of it — that is why
 the pre-push hook calls exactly `pnpm test`.
 
-## What the five suites pin today
+## What the source-named suites pin today
 
 Each suite pins its ADR. As code lands, the pins must grow teeth — never
 lose them:
@@ -21,11 +21,12 @@ lose them:
 | `events.test.ts` | 0001 | `message`-only valid; empty message rejected; unknown severity rejected; 64 KiB cap boundary (`MAX_EVENT_BODY_BYTES` ok, +1 byte over) |
 | `health.test.ts` | 0001 | Exact `{status, version, commit}` shape; version echoed, never hardcoded; commit non-empty |
 | `untrusted-payload.test.ts` | 0002 | Hostile text stays in the data channel; instruction channel byte-equals the fixed string; triage prompt states the rule |
-| `telegram-path.test.ts` | 0003 | Adapter is exactly `notify` + `onMessage`; module stays type-only (zero runtime exports) until the adapter ticket lands |
+| `telegram-path.test.ts`, `grammy.test.ts`, `index.test.ts` | 0003 | One managed grammY adapter owns paired-chat ingress and outbound owner replies; the type-only module stays runtime-empty; `onMessage` is deprecated compatibility surface |
 | `escape-hatch.test.ts` | 0004 | Prompt names the hatch as deterministic, lists host-dark + dead-backups, states triage bypass |
 
-When the HTTP listener, queue semantics, or Telegram adapter land, extend
-these files — do not start parallel suites that pin the same rule twice.
+The listener, queue, and managed Telegram adapter are implemented. Add new
+source-named tests beside the concern they pin; do not revive pre-adapter
+future-tense descriptions from old concept notes.
 
 ## The anti-placeholder rule
 
@@ -72,10 +73,8 @@ status-code contract, once the listener ticket lands:
 - Queue full → `503`, not a fake 202. Test that overload never masquerades
   as acceptance.
 
-Today the handler is a stub that throws `not implemented` — the envelope,
-size gate, and health constructor are what is actually tested. Say "not
-built yet" for the rest; do not describe the concept doc's HTTP layer as
-if it existed.
+The HTTP handler and managed Telegram path are implemented. Confirm current
+source and ADR pins before relying on older concept-document descriptions.
 
 ## The untrusted-payload test pattern (ADR-0002)
 
@@ -118,9 +117,9 @@ pnpm test:coverage                         # V8 coverage — for finding gaps
 ## Flaky vs real failure
 
 A test is flaky only if it passes on retry **with no code change** AND
-touches time, randomness, network, or concurrency. The current five suites
-are pure (schema, string match, interface shape) — none has a flakiness
-excuse. If one goes red, it is a real failure until proven otherwise:
+touches time, randomness, network, or concurrency. The unit, guards, build,
+and e2e projects cover pure contracts and loopback integration — none has a
+flakiness excuse. If one goes red, it is a real failure until proven otherwise:
 reproduce, read the assertion, fix the code or (per the rule above) update
 the invalidated expectation. Never add `retry`, `setTimeout` padding, or
 `.skip` to a deterministic test.
@@ -142,24 +141,25 @@ test:e2e-local` (real Pi RPC + MiMo against a **mocked** bot).
 
 Prereqs: repo-root `secrets.env` (gitignored, values never printed) with
 `PI_CARETAKER_TOKEN`, `PI_CARETAKER_TELEGRAM_BOT_TOKEN`,
-`PI_CARETAKER_TELEGRAM_CHAT_ID`; `TELEGRAM_MT_SESSION` minted once via
-the interactive login in `~/pi-manual-tests` (Python for now; gramjs
-in-repo port = task `0e3ea262`, py originals attached there as reference).
+`PI_CARETAKER_TELEGRAM_CHAT_ID`; use the in-repo GramJS tooling in
+`docs/ops/manual-telegram.md` to mint and use `TELEGRAM_MT_SESSION`. The
+Python reference tooling remains available until the owner retires it.
 
 1. `pnpm start` — builds, self-replaces the previous instance, port
    preflight, health gate, pidfile. Stop: `pnpm stop`. Hop diagnostics go
    to stderr → `pi-caretaker.log`.
 2. Send as the paired chat: from the owner's own Telegram account (its
    chat id must equal the configured one) or via MTProto —
-   `~/pi-manual-tests/.venv/bin/python ~/pi-manual-tests/send.py "<text>"`.
+   `node scripts/manual-telegram/send.mjs "<text>"`.
 3. In the log expect, in order: `telegram received chatMatch=true …` →
    `telegram forwarded` → `agent_end` (real model turn ran).
    `chatMatch=false`/`telegram dropped` means the allowlist didn't match.
 4. The final answer relays back to the sender via the single notify path
    (reply-to-sender, ADR-0003). Verify on the phone or reverse-hop:
-   `~/pi-manual-tests/.venv/bin/python ~/pi-manual-tests/read.py 4`.
+   `node scripts/manual-telegram/read.mjs 4`.
 5. Health: `curl -s 127.0.0.1:8787/health` — includes telegram polling
-   status (`getLastError` surfaces polling breaks).
+   status (`getLastError` surfaces polling/middleware breaks; reply-send
+  failures are a tracked TEST-GAP 11 and are not yet reflected there).
 
 Autonomous chat simulation without a phone: point the adapter at a
 loopback mock via `PI_CARETAKER_TELEGRAM_API_ROOT` (what the

@@ -214,7 +214,7 @@ describe("grammY Telegram adapter", () => {
     } finally { await adapter.stop(); }
   });
 
-  it("delivers only paired-chat messages to the handler", async () => {
+  it("delivers paired text and ignores uppercase /STOP as a command", async () => {
     const paired = {
       update_id: 1,
       message: {
@@ -233,13 +233,22 @@ describe("grammY Telegram adapter", () => {
         date: 1,
       },
     };
+    const uppercaseStop = {
+      update_id: 3,
+      message: {
+        message_id: 3,
+        chat: { id: 42, type: "private" },
+        text: "/STOP",
+        date: 1,
+      },
+    };
     let getUpdatesCalls = 0;
     const { fetch } = stubFetch((url) => {
       if (url.endsWith("/getMe")) return okGetMe;
       if (url.endsWith("/deleteWebhook")) return { ok: true, result: true };
       if (url.endsWith("/getUpdates")) {
         getUpdatesCalls += 1;
-        if (getUpdatesCalls === 1) return { ok: true, result: [stranger, paired] };
+        if (getUpdatesCalls === 1) return { ok: true, result: [stranger, paired, uppercaseStop] };
         return { ok: true, result: [] };
       }
       throw new Error(`unexpected call: ${url}`);

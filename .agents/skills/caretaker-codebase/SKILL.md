@@ -34,16 +34,19 @@ so a stranger cloning it still gets the rules that matter.
 - `health.ts` — `buildHealth` / `getHealth`; commit injected at build time
   via `tsup.config.ts` (`__PI_CARETAKER_COMMIT__`, falls back to `"dev"`).
   Actually implemented and tested — the one load-bearing runtime file.
-- `telegram/index.ts` — the one owned Telegram path (ADR-0003).
-  **Interface only: zero runtime exports** (pinned by test). The adapter
-  (Pitgram validation first, grammY fallback) is a future ticket.
+- `telegram/index.ts` — shared transport types for the one owned Telegram
+  conversation (ADR-0003); intentionally zero runtime exports. The managed
+  adapter is implemented in `telegram/grammy.ts` (grammY Bot API), including
+  paired-chat ingress, owner replies, commands, and liveness error access.
+  `TelegramAdapter.onMessage` is deprecated compatibility surface; production
+  ingress uses the managed adapter's `onPairedMessage`.
 - `prompts/triage.md` — triage guidance draft: untrusted-data rule,
   notification discipline, escape hatch. Security-sensitive (ADR-0002,
   ADR-0004). Plain markdown read at runtime — treat edits like code.
 
 ## Decisions and docs (`docs/`)
 
-- `docs/decisions/` — four binding ADRs; `index.md` is the front door,
+- `docs/decisions/` — binding ADRs; `index.md` is the front door,
   `TEMPLATE.md` the shape. Every accepted ADR has a `## Pins` section
   naming tests and a one-line `ADR-NNNN` pointer in the code it governs.
   The gate reads them mechanically: `check-adrs.mjs` checks dangling refs,
@@ -56,8 +59,9 @@ so a stranger cloning it still gets the rules that matter.
 - `docs/integrations/vibeflow.md` — the first real event source; documents
   the one-way POST and the envelope example.
 - `docs/concept/` — the source concept doc. Aspirations, not built truth;
-  never cite it as what the code does.
-- `docs/research/` — where the Pitgram spike lands first.
+  never cite it as what the code does. Do not implement from concept text
+  without checking current ADRs and source.
+- `docs/research/` — historical investigations; treat them as context, not an implementation contract.
 
 ## Guards, hooks, and release (`scripts/`, `.husky/`)
 
@@ -76,9 +80,10 @@ so a stranger cloning it still gets the rules that matter.
 
 ## Where secrets must never appear
 
-No `.env` files, no tokens in fixtures, no credentials in logs — there is
-deliberately no `.env` support; configuration arrives via the environment
-at runtime. The bearer token is checked before parsing and never logged;
+No tracked `.env` files, no tokens in fixtures, no credentials in logs.
+Caretaker runtime configuration arrives via the process environment; the
+operator-owned, gitignored root `secrets.env` is read only by manual
+operator tooling and never by `src/`. The bearer token is checked before parsing and never logged;
 webhook payloads are never logged whole (secrets hide in `metadata`).
 `SECURITY.md` owns the threat model: webhook token, untrusted payload,
 SSH capability.

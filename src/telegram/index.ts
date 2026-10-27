@@ -1,10 +1,9 @@
 /**
- * The single Telegram path (ADR-0003).
+ * Telegram transport types for the one conversation path (ADR-0003).
  *
- * This project owns the Telegram conversation: `notify(text)` is the only way
- * pi-caretaker sends a Telegram message, and `onMessage(handler)` is the only
- * inbound path. No second notifier may also post here. Interface only — the
- * adapter (Pitgram validation first, grammY fallback) lands in its own ticket.
+ * The managed grammY adapter owns paired-chat ingress and sends owner replies
+ * through that same chat. The generic `notify` surface is used for outbound
+ * notifications; there is no second sender or alternate conversation.
  */
 export interface TelegramMessageHandler {
   (text: string): void;
@@ -12,5 +11,6 @@ export interface TelegramMessageHandler {
 
 export interface TelegramAdapter {
   notify(text: string): Promise<void>;
+  /** @deprecated Legacy generic ingress; the managed adapter uses onPairedMessage. */
   onMessage(handler: TelegramMessageHandler): void;
 }
